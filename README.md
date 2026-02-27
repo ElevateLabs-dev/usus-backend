@@ -144,3 +144,114 @@ _(Add testing instructions here once pytest is configured)_
 pytest app/tests/
 
 ```
+
+---
+
+## Idea Dumps
+
+```plaintext
+usus_backend/
+├── alembic.ini
+├── pyproject.toml
+├── alembic/
+└── app/
+    ├── __init__.py
+    ├── main.py             # FastAPI application entry point
+    ├── celery_app.py       # Celery application instance & routing
+    │
+    ├── core/               # App-wide foundational settings
+    │   ├── config.py       # Pydantic BaseSettings (DB URLs, LLM API keys)
+    │   ├── database.py     # SQLAlchemy async engine & Postgres session
+    │   ├── vector_db.py    # Pinecone/pgvector connection
+    │   └── security.py     # Multi-tenant RBAC logic (Admin, Manager, Trainee) [cite: 171]
+    │
+    ├── utils/              # ⬅️ Shared utilities (Agnostic to business logic)
+    │   ├── llm_client.py   # Model-agnostic LLM wrappers (Claude, OpenAI)
+    │   ├── audio.py        # STT/TTS API wrappers and audio file converters [cite: 37, 80]
+    │   ├── storage.py      # AWS S3 wrappers for storing voice recordings [cite: 216, 277]
+    │   └── text_parsing.py # Helpers for cleaning LLM JSON outputs
+    │
+    ├── admin/              # Starlette-Admin dashboards
+    │   ├── setup.py
+    │   └── views.py        # Admin views for Tenants, Users, and System Health
+    │
+    └── domains/            # ⬅️ Your Core Usus Modules
+        ├── tenants/        # Multi-tenancy & Company management [cite: 207]
+        │   ├── router.py, models.py, schemas.py, crud.py
+        │
+        ├── simulations/    # The Simulation Engine [cite: 42]
+        │   ├── router.py   # WebSocket/WebRTC endpoints for real-time chat/voice
+        │   ├── models.py   # Simulation sessions, chat history
+        │   ├── schemas.py
+        │   ├── crud.py
+        │   └── engine.py   # Hybrid generation logic (Scripts + AI Improv) [cite: 53]
+        │
+        ├── evaluations/    # The Evaluation Engine [cite: 84]
+        │   ├── router.py
+        │   ├── models.py   # Scores, Red Flags, Dimensions [cite: 89, 114]
+        │   ├── schemas.py
+        │   ├── crud.py
+        │   └── tasks.py    # ⬅️ Celery tasks: Async scoring & report generation
+        │
+        ├── knowledge_base/ # Training Knowledge Base (RAG) [cite: 121]
+        │   ├── router.py
+        │   ├── models.py   # Document metadata
+        │   ├── schemas.py
+        │   ├── crud.py
+        │   ├── rag.py      # Retrieval logic across the 3 knowledge layers [cite: 283]
+        │   └── tasks.py    # ⬅️ Celery tasks: Vectorizing company docs/reviews in background
+        │
+        └── learning/       # Learning Path Engine [cite: 147]
+            ├── router.py
+            ├── models.py   # Scenarios, Categories, Paths, Remediation Modules [cite: 151, 281, 282]
+            ├── schemas.py
+            └── crud.py
+```
+
+---
+
+## Potential Dependencies Dump
+
+```plaintext
+# Core Web Framework
+"fastapi>=0.110.0",
+"uvicorn[standard]>=0.29.0",
+"pydantic>=2.6.0",
+"pydantic-settings>=2.2.0",
+"python-multipart>=0.0.9",  # Required for file/audio uploads
+
+# Database & ORM (Async)
+"sqlalchemy>=2.0.29",
+"asyncpg>=0.29.0",
+"alembic>=1.13.1",
+"pgvector>=0.2.5",          # For RAG embeddings in PostgreSQL
+
+# Admin Dashboard
+"starlette-admin>=0.13.1",
+"itsdangerous>=2.1.2",      # Required by starlette-admin for session security
+
+# Background Tasks & Caching
+"celery>=5.3.6",
+"redis>=5.0.3",
+
+# AI & LLM Integration
+"openai>=1.14.0",           # Primary LLM client
+"anthropic>=0.21.0",        # For Claude fallback/options
+"tiktoken>=0.6.0",          # Token counting for RAG chunking
+
+# Real-time Streaming (Voice/Chat)
+"websockets>=12.0",         # For real-time WebRTC signaling & Sockets
+
+# Cloud Storage (Async AWS S3)
+"aioboto3>=12.3.0",         # For asynchronously saving voice recordings to S3
+
+###### DEV DEPENDENCIES #########
+# Testing
+"pytest>=8.1.1",
+"pytest-asyncio>=0.23.5",
+"httpx>=0.27.0",            # Async test client for FastAPI
+
+# Linting & Formatting
+"ruff>=0.3.3",              # Blazing fast linter/formatter (Replaces flake8/black)
+"mypy>=1.9.0",              # Static type checking
+```

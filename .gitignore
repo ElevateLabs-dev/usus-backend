@@ -1,0 +1,68 @@
+# =========================
+# Python & Bytecode
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# =========================
+# Environments & Package Management (uv)
+# =========================
+# Ignore the actual virtual environment directory created by `uv`
+.venv/
+venv/
+env/
+ENV/
+
+# NOTE: Do NOT ignore pyproject.toml or uv.lock! 
+# They must be committed for deterministic builds.
+
+# =========================
+# Secrets & Environment Variables
+# =========================
+# Never commit your database URLs, Redis URIs, or API keys
+.env
+.env.*
+!.env.example
+
+# =========================
+# Background Processing (Celery)
+# =========================
+celerybeat-schedule
+celerybeat.pid
+*.pid
+
+# =========================
+# Linting & Testing
+# =========================
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# =========================
+# OS & IDE Generated Files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PyCharm / IntelliJ
+.idea/
