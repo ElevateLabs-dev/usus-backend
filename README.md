@@ -138,10 +138,8 @@ uv run celery -A app.celery_app worker --loglevel=info
 
 ## Testing
 
-_(Add testing instructions here once pytest is configured)_
-
 ```bash
-pytest app/tests/
+uv run pytest tests/
 
 ```
 

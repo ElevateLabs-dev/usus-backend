@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from src.domains.evaluations.router import router as evaluations_router
 from src.domains.simulations.router import router as simulations_router
 
 
@@ -13,6 +14,7 @@ def create_app() -> FastAPI:
 
     # Register domain routers
     app.include_router(simulations_router)
+    app.include_router(evaluations_router)
 
     @app.get("/health")
     async def root_health_check():
