@@ -1,19 +1,24 @@
 import uuid
 import json
-from typing import List
+from typing import List, Sequence
 
-from src.infrastructure.storage.memory import MemoryRepository
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.infrastructure.llm.base import LLMProvider
 from src.domains.simulations.models import Session, Message, SessionStatus
-from src.domains.evaluations.models import EvaluationResult, DimensionScore, RedFlag
+from src.domains.evaluations.models import EvaluationResult
+
+from src.domains.evaluations.crud import CRUDEvaluationResult, CRUDDimensionScore, CRUDRedFlag
+from src.domains.evaluations.schemas import (
+    EvaluationResultCreate, DimensionScoreCreate, RedFlagCreate
+)
 
 
 class EvaluationService:
     def __init__(
         self,
-        eval_result_repo: MemoryRepository[EvaluationResult],
-        dimension_score_repo: MemoryRepository[DimensionScore],
-        red_flag_repo: MemoryRepository[RedFlag],
+        eval_result_repo: CRUDEvaluationResult,
+        dimension_score_repo: CRUDDimensionScore,
+        red_flag_repo: CRUDRedFlag,
         llm_provider: LLMProvider,
     ):
         self.eval_result_repo = eval_result_repo
@@ -22,9 +27,9 @@ class EvaluationService:
         self.llm_provider = llm_provider
 
     async def evaluate_session(
-        self, tenant_id: uuid.UUID, session: Session, messages: List[Message]
+        self, db: AsyncSession, tenant_id: uuid.UUID, session: Session, messages: Sequence[Message]
     ) -> EvaluationResult:
-
+        
         # Prepare transcript
         transcript = ""
         for msg in messages:
@@ -66,35 +71,28 @@ class EvaluationService:
                 "red_flags": [],
             }
 
-        eval_id = uuid.uuid4()
-        eval_result = EvaluationResult(
-            id=eval_id,
-            tenant_id=tenant_id,
+        eval_create = EvaluationResultCreate(
             session_id=session.id,
             overall_score=eval_data.get("overall_score"),
-            summary=eval_data.get("summary"),
+            summary=eval_data.get("summary")
         )
-        self.eval_result_repo.save(tenant_id, eval_result)
+        eval_result = await self.eval_result_repo.create(db=db, obj_in=eval_create, tenant_id=tenant_id)
 
         for dim in eval_data.get("dimensions", []):
-            ds = DimensionScore(
-                id=uuid.uuid4(),
-                evaluation_id=eval_id,
+            ds_create = DimensionScoreCreate(
+                evaluation_id=eval_result.id,
                 dimension_name=dim.get("name"),
                 score=dim.get("score"),
-                rationale=dim.get("rationale"),
+                rationale=dim.get("rationale")
             )
-            self.dimension_score_repo.save(tenant_id, ds)
+            await self.dimension_score_repo.create(db=db, obj_in=ds_create)
 
         for rf in eval_data.get("red_flags", []):
-            flag = RedFlag(
-                id=uuid.uuid4(),
-                evaluation_id=eval_id,
+            rf_create = RedFlagCreate(
+                evaluation_id=eval_result.id,
                 reason=rf.get("reason"),
-                description=rf.get("description"),
+                description=rf.get("description")
             )
-            self.red_flag_repo.save(tenant_id, flag)
-
-        session.status = SessionStatus.EVALUATED
+            await self.red_flag_repo.create(db=db, obj_in=rf_create)
 
         return eval_result

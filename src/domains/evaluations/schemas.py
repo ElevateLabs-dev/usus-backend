@@ -1,6 +1,6 @@
 from uuid import UUID
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class EvaluationResultBase(BaseModel):
@@ -22,8 +22,7 @@ class EvaluationResultResponse(EvaluationResultBase):
     id: UUID
     tenant_id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DimensionScoreBase(BaseModel):
@@ -44,8 +43,7 @@ class DimensionScoreUpdate(DimensionScoreBase):
 class DimensionScoreResponse(DimensionScoreBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RedFlagBase(BaseModel):
@@ -65,5 +63,4 @@ class RedFlagUpdate(RedFlagBase):
 class RedFlagResponse(RedFlagBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
