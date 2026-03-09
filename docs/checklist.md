@@ -15,26 +15,26 @@ with post-session evaluation and structured debrief.
 
 ### A1. Domain Models & Schemas
 
-- [ ] `domains/scenarios/` — Scenario, CustomerPersona, DifficultyLevel enums
-- [ ] `domains/simulations/` — Session, Message, SessionStatus enums
-- [ ] `domains/evaluations/` — EvaluationResult, DimensionScore, RedFlag
-- [ ] `Tenant` model with row-level multi-tenancy
-- [ ] `Scenario` table (with tenant_id FK)
-- [ ] `Session` table (with tenant_id FK)
-- [ ] `Message` table (linked to session)
-- [ ] `EvaluationResult` table (linked to session)
+- [x] `domains/scenarios/` — Scenario, CustomerPersona, DifficultyLevel enums
+- [x] `domains/simulations/` — Session, Message, SessionStatus enums
+- [x] `domains/evaluations/` — EvaluationResult, DimensionScore, RedFlag
+- [x] `Tenant` model with row-level multi-tenancy
+- [x] `Scenario` table (with tenant_id FK)
+- [x] `Session` table (with tenant_id FK)
+- [x] `Message` table (linked to session)
+- [x] `EvaluationResult` table (linked to session)
 
 ### A2. Infrastructure
 
-- [ ] `infrastructure/llm/base.py` — Abstract LLM provider interface
-- [ ] `infrastructure/llm/anthropic.py` — Claude implementation (model-agnostic ready)
-- [ ] `infrastructure/storage/memory.py` — In-memory repository (sessions, scenarios)
+- [x] `infrastructure/llm/base.py` — Abstract LLM provider interface
+- [x] `infrastructure/llm/anthropic.py` — Claude implementation (model-agnostic ready)
+- [x] `infrastructure/storage/memory.py` — In-memory repository (sessions, scenarios)
 
 ### A3. Core Services
 
-- [ ] `domains/scenarios/service.py` — Load/list scenarios, seed defaults
-- [ ] `domains/simulations/service.py` — Orchestrate simulation (start, send message, end)
-- [ ] `domains/evaluations/service.py` — 7-dimension scoring + debrief generation
+- [x] `domains/scenarios/service.py` — Load/list scenarios, seed defaults
+- [x] `domains/simulations/service.py` — Orchestrate simulation (start, send message, end)
+- [x] `domains/evaluations/service.py` — 7-dimension scoring + debrief generation
 
 ### A4. Repository Layer
 
