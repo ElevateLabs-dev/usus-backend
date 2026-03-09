@@ -5,9 +5,7 @@ from src.admin.auth import AdminAuthProvider
 from src.admin.views import TenantAdminView
 from src.core.config import settings
 from src.core.database import engine
-from src.domains.tenants.models import (
-    Tenant,
-)  # noqa: F401 — ensures model is registered
+from src.domains.tenants.models import Tenant
 
 
 def setup_admin(app: FastAPI) -> None:
@@ -22,7 +20,6 @@ def setup_admin(app: FastAPI) -> None:
         auth_provider=AdminAuthProvider(),
         # itsdangerous session backed by SECRET_KEY
         middlewares=[],
-        # statics_same_origin=True,
     )
 
     # Register views

@@ -14,3 +14,4 @@ class TenantAdminView(ModelView):
 
     # These columns will appear in the detail/search view
     column_detail_list = ["id", "name", "is_active", "created_at", "updated_at"]
+    column_searchable_list = ["name"]
