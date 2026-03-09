@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
 
+    # Admin dashboard credentials
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str
+
     # AI Providers (Optional locally so the app doesn't crash if you leave them blank at first)
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None

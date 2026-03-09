@@ -116,6 +116,9 @@ uv run alembic upgrade head
 
 ```bash
 # We use `uv run` to ensure it executes strictly within the uv environment
+uv run fastapi dev src/main.py
+
+# or directly via uvicorn
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ```
