@@ -49,8 +49,8 @@ with post-session evaluation and structured debrief.
 
 ### A6. Seed Data
 
-- [ ] At least 3 starter scenarios (Beginner / Intermediate / Advanced)
-- [ ] Customer personas matching spec (Friendly, Frustrated, Angry)
+- [x] At least 3 starter scenarios (Beginner / Intermediate / Advanced)
+- [x] Customer personas matching spec (Friendly, Frustrated, Angry)
 
 ---
 

@@ -42,10 +42,15 @@ class SimulationService:
             db=db, obj_in=session_in, tenant_id=tenant_id
         )
 
+        system_prompt_content = (
+            scenario.system_prompt
+            if scenario.system_prompt
+            else f"You are a {scenario.persona.value} customer. Scenario: {scenario.name}. {scenario.description}"
+        )
         sys_msg_in = MessageCreate(
             session_id=session.id,
             role=MessageRole.SYSTEM,
-            content=f"You are a {scenario.persona.value} customer. Scenario: {scenario.name}. {scenario.description}",
+            content=system_prompt_content,
         )
         await self.message_repo.create(db=db, obj_in=sys_msg_in, tenant_id=tenant_id)
 

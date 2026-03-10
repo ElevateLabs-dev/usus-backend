@@ -1,4 +1,5 @@
 import enum
+from typing import Optional
 from sqlalchemy import String, Text, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +23,7 @@ class Scenario(TenantAwareBase):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     persona: Mapped[CustomerPersona] = mapped_column(
         Enum(CustomerPersona, name="customer_persona_enum"), nullable=False
     )
