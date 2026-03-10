@@ -11,7 +11,7 @@ class AnthropicProvider(LLMProvider):
     Anthropic implementation of the LLMProvider using the official SDK.
     """
 
-    def __init__(self, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, model: str = "claude-haiku-4-5"):
         self.model = model
         # The AsyncAnthropic client will automatically use ANTHROPIC_API_KEY from environment
         self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)

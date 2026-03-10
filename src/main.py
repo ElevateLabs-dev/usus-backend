@@ -35,3 +35,18 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+if __name__ == "__main__":
+    import sys
+    import asyncio
+
+    if len(sys.argv) > 1 and sys.argv[1] == "cli":
+        from src.cli.runner import run_cli
+
+        try:
+            asyncio.run(run_cli())
+        except KeyboardInterrupt:
+            print("\nExiting CLI...")
+    else:
+        import uvicorn
+        uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)

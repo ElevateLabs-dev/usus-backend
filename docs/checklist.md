@@ -38,14 +38,14 @@ with post-session evaluation and structured debrief.
 
 ### A4. Repository Layer
 
-- [ ] Enforce tenant_id filtering on all queries
+- [x] Enforce tenant_id filtering on all queries
 - [ ] Session transcript storage
 
 ### A5. CLI Runner
 
-- [ ] `cli/runner.py` — Interactive CLI: pick scenario → chat → get evaluation
-- [ ] `config.py` — Central config (API keys, model selection)
-- [ ] `main.py` — Entry point
+- [x] `cli/runner.py` — Interactive CLI: pick scenario → chat → get evaluation
+- [x] `config.py` — Central config (API keys, model selection)
+- [x] `main.py` — Entry point
 
 ### A6. Seed Data
 
