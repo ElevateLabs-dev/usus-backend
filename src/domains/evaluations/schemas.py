@@ -64,3 +64,8 @@ class RedFlagResponse(RedFlagBase):
     id: UUID
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EvaluationResultDetailResponse(EvaluationResultResponse):
+    dimension_scores: list[DimensionScoreResponse] = []
+    red_flags: list[RedFlagResponse] = []

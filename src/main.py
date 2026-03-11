@@ -3,7 +3,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from src.admin import setup_admin
 from src.core.config import settings
+from src.domains.auth.router import router as auth_router
 from src.domains.evaluations.router import router as evaluations_router
+from src.domains.scenarios.router import router as scenarios_router
 from src.domains.simulations.router import router as simulations_router
 
 
@@ -21,8 +23,10 @@ def create_app() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
     # Register domain routers
+    app.include_router(auth_router)
     app.include_router(simulations_router)
     app.include_router(evaluations_router)
+    app.include_router(scenarios_router)
 
     # Mount the admin panel at /admin
     setup_admin(app)
@@ -49,4 +53,5 @@ if __name__ == "__main__":
             print("\nExiting CLI...")
     else:
         import uvicorn
+
         uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)

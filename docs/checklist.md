@@ -60,17 +60,17 @@ Core goal: Expose simulation as REST API endpoints.
 
 ### B1. API Routes
 
-- [ ] `POST /simulations/start` — Start a new session
-- [ ] `POST /simulations/{session_id}/message` — Send trainee message
-- [ ] `POST /simulations/{session_id}/end` — End session, trigger eval
-- [ ] `GET /simulations/{session_id}/evaluation` — Get debrief
-- [ ] `GET /scenarios/` — List available scenarios
+- [x] `POST /simulations/start` — Start a new session
+- [x] `POST /simulations/{session_id}/message` — Send trainee message
+- [x] `POST /simulations/{session_id}/end` — End session, trigger eval
+- [x] `GET /simulations/{session_id}/evaluation` — Get debrief
+- [x] `GET /scenarios/` — List available scenarios
 
 ### B2. Auth & Tenancy
 
-- [ ] Basic auth middleware (API key or JWT stub)
-- [ ] Tenant extraction from auth context
-- [ ] RBAC role checks (Platform Admin, Company Admin, Manager, Trainee)
+- [x] Basic auth middleware (API key or JWT stub)
+- [x] Tenant extraction from auth context
+- [x] RBAC role checks (Platform Admin, Company Admin, Manager, Trainee)
 
 ### B3. OpenAPI Docs
 
@@ -125,5 +125,5 @@ Core goal: Expose simulation as REST API endpoints.
 
 ## Current Status
 
-**Active Phase:** A (Minimal CLI Simulation and Persistence Layer)
-**Last Updated:** 2026-03-09
+**Active Phase:** B (FastAPI HTTP Layer)
+**Last Updated:** 2026-03-10
