@@ -6,6 +6,8 @@ from src.admin.views import TenantAdminView
 from src.core.config import settings
 from src.core.database import engine
 from src.domains.tenants.models import Tenant
+from src.domains.users.admin import UserAdminView
+from src.domains.users.models import User
 
 
 def setup_admin(app: FastAPI) -> None:
@@ -24,5 +26,6 @@ def setup_admin(app: FastAPI) -> None:
 
     # Register views
     admin.add_view(TenantAdminView(Tenant, label="Tenants"))
+    admin.add_view(UserAdminView(User, label="Users"))
 
     admin.mount_to(app)

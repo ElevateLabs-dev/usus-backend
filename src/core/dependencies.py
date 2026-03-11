@@ -24,7 +24,7 @@ class UserRole(str, Enum):
 @dataclass
 class AuthContext:
     user_id: UUID
-    tenant_id: UUID
+    tenant_id: UUID | None  # None for unscoped platform-admin tokens
     role: UserRole
 
 
@@ -45,10 +45,10 @@ def get_auth_context(token: str = Depends(oauth2_scheme)) -> AuthContext:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         user_id_raw: str | None = payload.get("user_id")
-        tenant_id_raw: str | None = payload.get("tenant_id")
+        tenant_id_raw: str | None = payload.get("tenant_id")  # may be absent
         role_raw: str | None = payload.get("role")
 
-        if not all([user_id_raw, tenant_id_raw, role_raw]):
+        if not user_id_raw or not role_raw:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -56,7 +56,7 @@ def get_auth_context(token: str = Depends(oauth2_scheme)) -> AuthContext:
     try:
         return AuthContext(
             user_id=UUID(user_id_raw),
-            tenant_id=UUID(tenant_id_raw),
+            tenant_id=UUID(tenant_id_raw) if tenant_id_raw else None,
             role=UserRole(role_raw),
         )
     except (ValueError, KeyError):
@@ -67,10 +67,16 @@ def get_current_tenant_id(
     ctx: AuthContext = Depends(get_auth_context),
 ) -> UUID:
     """
-    Backward-compatible shortcut — returns just the tenant_id from the
-    current AuthContext. Existing routes that only need the tenant keep
-    working without modification.
+    Returns the tenant_id from the current AuthContext.  Raises 401 if the
+    token carries no tenant (e.g. unscoped platform-admin token) — keeps all
+    existing tenant-scoped routes working without any signature change.
     """
+    if ctx.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant context required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return ctx.tenant_id
 
 

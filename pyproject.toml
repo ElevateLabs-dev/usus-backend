@@ -9,10 +9,11 @@ dependencies = [
     "alembic>=1.18.4",
     "anthropic>=0.84.0",
     "asyncpg>=0.31.0",
+    "bcrypt>=5.0.0",
     "celery>=5.6.2",
     "fastapi[standard]>=0.133.1",       # Comes with uvicorn
     "itsdangerous>=2.2.0",              # For secure token generation# Required by starlette-admin for session security
-    "openai>=2.24.0",
+    "openai>=2.24.0",             # Password hashing
     "pgvector>=0.4.2",                  # For RAG embeddings in PostgreSQL
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
@@ -38,6 +39,12 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"  # pytest-asyncio: treat all async test functions as asyncio tests
 testpaths = ["tests"]
+
+[project.scripts]
+seed-admin = "src.cli.seed_admin:seed_admin"
+
+[tool.uv]
+package = true
 
 [tool.ruff]
 # Standard Ruff configuration for FastAPI projects

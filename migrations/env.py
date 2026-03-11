@@ -15,6 +15,7 @@ import src.domains.tenants.models
 import src.domains.simulations.models
 import src.domains.evaluations.models
 import src.domains.scenarios.models
+import src.domains.users.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
