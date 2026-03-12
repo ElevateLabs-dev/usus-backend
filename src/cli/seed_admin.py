@@ -5,7 +5,7 @@ from src.core.database import AsyncSessionLocal
 async def _seed_admin() -> None:
     import getpass
     from src.core.security import hash_password
-    from src.domains.users.crud import create, get_by_email
+    from src.domains.users.crud import user as user_repo
     from src.domains.users.schemas import UserCreate
     from src.core.dependencies import UserRole
 
@@ -40,7 +40,7 @@ async def _seed_admin() -> None:
             return
 
     async with AsyncSessionLocal() as db:
-        existing = await get_by_email(db, email)
+        existing = await user_repo.get_by_email(db, email)
         if existing:
             print(f"A user with email {email!r} already exists (id={existing.id}).")
             return
@@ -50,7 +50,7 @@ async def _seed_admin() -> None:
             role=UserRole.PLATFORM_ADMIN,
             tenant_id=tenant_id,
         )
-        user = await create(db, data, hash_password(password))
+        user = await user_repo.create(db, obj_in=data, hashed_password=hash_password(password))
         print("\nPlatform admin created successfully.")
         print(f"  id    : {user.id}")
         print(f"  email : {user.email}")

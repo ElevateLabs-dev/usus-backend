@@ -7,15 +7,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 class Base(DeclarativeBase):
     """Base class for all models"""
 
-    pass
-
-
-class TenantAwareBase(Base):
-    """
-    Abstract base class enforcing row-level multi-tenancy.
-    All models inheriting from this will automatically get a tenant_id.
-    """
-
     __abstract__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -26,10 +17,6 @@ class TenantAwareBase(Base):
         index=True,
     )
 
-    tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, index=True
-    )
-
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -38,4 +25,17 @@ class TenantAwareBase(Base):
         onupdate=func.now(),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+class TenantAwareBase(Base):
+    """
+    Abstract base class enforcing row-level multi-tenancy.
+    All models inheriting from this will automatically get a tenant_id.
+    """
+
+    __abstract__ = True
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
     )

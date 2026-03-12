@@ -33,9 +33,7 @@ async def test_trigger_evaluation_unauthorized():
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.post(
-            f"/api/v1/evaluations/{SIMULATION_ID}/generate"
-        )
+        response = await client.post(f"/api/v1/evaluations/{SIMULATION_ID}/generate")
 
     assert response.status_code == 401
 
@@ -48,7 +46,9 @@ async def test_trigger_evaluation_authorized():
     - trigger generate_evaluation_report.delay(...)
     - return 200 with task_id and status='processing'
     """
-    token = make_token({"tenant_id": TENANT_ID, "sub": "test-user"})
+    token = make_token(
+        {"tenant_id": TENANT_ID, "user_id": str(uuid.uuid4()), "role": "manager"}
+    )
 
     mock_task = MagicMock()
     mock_task.id = "mock-task-id-abc123"

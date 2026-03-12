@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.core.base_crud import CRUDBase
+from src.core.base_crud import CRUDBase, CRUDBaseRoot
 from src.domains.evaluations.models import EvaluationResult, DimensionScore, RedFlag
 from src.domains.evaluations.schemas import (
     EvaluationResultCreate,
@@ -45,38 +45,12 @@ class CRUDEvaluationResult(
         return result.scalar_one_or_none()
 
 
-# DimensionScore and RedFlag inherit from Base, not TenantAwareBase, but usually
-# accessed via EvaluationResult. If we need direct CRUD, we must ensure we check the
-# parent's tenant_id, or trust the app layer. For now, we provide base CRUD but
-# without tenant_id enforcement if they don't have it, or we join with parent.
-# Since they don't have tenant_id in the model schema, standard CRUDBase might fail
-# because it assumes `self.model.tenant_id` exists. Let's create custom ones.
+class CRUDDimensionScore(CRUDBaseRoot[DimensionScore, DimensionScoreCreate, DimensionScoreUpdate]):
+    pass
 
 
-class CRUDDimensionScore:
-    def __init__(self, model: type[DimensionScore]):
-        self.model = model
-
-    async def create(
-        self, db: AsyncSession, *, obj_in: DimensionScoreCreate
-    ) -> DimensionScore:
-        db_obj = self.model(**obj_in.model_dump())
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
-
-
-class CRUDRedFlag:
-    def __init__(self, model: type[RedFlag]):
-        self.model = model
-
-    async def create(self, db: AsyncSession, *, obj_in: RedFlagCreate) -> RedFlag:
-        db_obj = self.model(**obj_in.model_dump())
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+class CRUDRedFlag(CRUDBaseRoot[RedFlag, RedFlagCreate, RedFlagUpdate]):
+    pass
 
 
 evaluation_result = CRUDEvaluationResult(EvaluationResult)

@@ -5,11 +5,12 @@ from pydantic import BaseModel
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.base_model import TenantAwareBase
+from src.core.base_model import Base, TenantAwareBase
 
 
 # Define generic types for the Model and Pydantic schemas
 ModelType = TypeVar("ModelType", bound=TenantAwareBase)
+RootModelType = TypeVar("RootModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
@@ -91,6 +92,75 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     ) -> ModelType | None:
         """Delete a record, strictly filtered by tenant_id."""
         db_obj = await self.get(db=db, id=id, tenant_id=tenant_id)
+        if not db_obj:
+            return None  # TODO: consider raising an exception here instead for better error handling
+
+        await db.delete(db_obj)
+        await db.commit()
+        return db_obj
+
+
+class CRUDBaseRoot(Generic[RootModelType, CreateSchemaType, UpdateSchemaType]):
+    """
+    CRUD object for root entities that are not tenant-scoped (e.g. Tenant, User,
+    or child records accessed via a parent rather than a tenant FK).
+
+    Identical interface to CRUDBase but without tenant_id enforcement.
+    """
+
+    def __init__(self, model: type[RootModelType]):
+        self.model = model
+
+    async def get(self, db: AsyncSession, id: UUID) -> RootModelType | None:
+        """Fetch a single record by primary key."""
+        query = select(self.model).where(self.model.id == id)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_multi(
+        self, db: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> Sequence[RootModelType]:
+        """Fetch multiple records with optional pagination."""
+        query = select(self.model).offset(skip).limit(limit)
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def create(
+        self, db: AsyncSession, *, obj_in: CreateSchemaType
+    ) -> RootModelType:
+        """Create a new record."""
+        db_obj = self.model(**obj_in.model_dump())
+        db.add(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
+        return db_obj
+
+    async def update(
+        self, db: AsyncSession, *, id: UUID, obj_in: UpdateSchemaType
+    ) -> RootModelType | None:
+        """Update a record by primary key."""
+        db_obj = await self.get(db=db, id=id)
+        if not db_obj:
+            return None  # TODO: consider raising an exception here instead for better error handling
+
+        update_data = (
+            obj_in
+            if isinstance(obj_in, dict)
+            else obj_in.model_dump(exclude_unset=True)
+        )
+        update_data.pop("id", None)
+
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+
+        db.add(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
+        return db_obj
+
+    async def remove(self, db: AsyncSession, *, id: UUID) -> RootModelType | None:
+        """Delete a record by primary key."""
+        db_obj = await self.get(db=db, id=id)
         if not db_obj:
             return None  # TODO: consider raising an exception here instead for better error handling
 

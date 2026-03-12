@@ -36,11 +36,11 @@ class TokenResponse(BaseModel):
 @router.post("/token", summary="Obtain a Bearer JWT")
 async def issue_token(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[AsyncSession, Depends(get_db)],
     tenant_id: Annotated[
         UUID | None,
-        Query(default=None, description="Scope token to tenant (platform admins only)"),
+        Query(description="Scope token to tenant (platform admins only)"),
     ] = None,
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ) -> TokenResponse:
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,7 +48,7 @@ async def issue_token(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    user = await users_crud.get_by_email(db, form.username)
+    user = await users_crud.user.get_by_email(db, form.username)
     if user is None or not user.is_active:
         raise invalid
     if not verify_password(form.password, user.hashed_password):

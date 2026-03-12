@@ -3,15 +3,16 @@ from starlette.responses import Response
 from starlette_admin.auth import AdminUser, AuthProvider
 from starlette_admin.exceptions import FormValidationError
 
-from src.core.config import settings
+from src.core.database import AsyncSessionLocal
+from src.core.dependencies import UserRole
+from src.core.security import verify_password
+from src.domains.users.crud import user as user_repo
 
 
 class AdminAuthProvider(AuthProvider):
     """
-    Simple credentials-based auth provider for the Starlette-Admin panel.
-
-    Credentials are read from settings (ADMIN_USERNAME / ADMIN_PASSWORD)
-    so they never live in source control.
+    Authenticates admin-panel logins against the User table.
+    Only PLATFORM_ADMIN users are granted access.
     """
 
     async def login(
@@ -22,14 +23,22 @@ class AdminAuthProvider(AuthProvider):
         request: Request,
         response: Response,
     ) -> Response:
-        if username == settings.ADMIN_USERNAME and password == settings.ADMIN_PASSWORD:
-            # Store the username in the session so is_authenticated can read it.
-            request.session.update({"admin_username": username})
-            return response
-
-        raise FormValidationError(
+        invalid = FormValidationError(
             {"password": "Invalid username or password. Please try again."}
         )
+
+        async with AsyncSessionLocal() as db:
+            user = await user_repo.get_by_email(db, username)
+
+        if user is None or not user.is_active:
+            raise invalid
+        if user.role != UserRole.PLATFORM_ADMIN.value:
+            raise invalid
+        if not verify_password(password, user.hashed_password):
+            raise invalid
+
+        request.session.update({"admin_username": user.email})
+        return response
 
     async def is_authenticated(self, request: Request) -> bool:
         return bool(request.session.get("admin_username"))

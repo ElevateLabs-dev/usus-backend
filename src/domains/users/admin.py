@@ -1,26 +1,60 @@
+from typing import Any, Sequence, Tuple
+
 from starlette.requests import Request
 from starlette_admin.actions import action
 from starlette_admin.contrib.sqla import ModelView
 from starlette_admin.exceptions import ActionFailed
+from starlette_admin.fields import EnumField
 
+from src.core.dependencies import UserRole
 from src.core.security import UNUSABLE_PASSWORD, hash_password
+from src.domains.tenants import crud as tenants_crud
 from src.domains.users.models import User
+
+
+NO_TENANT = "— none (platform admin) —"
+
+
+class TenantEnumField(EnumField):
+    """EnumField that loads tenant choices dynamically from the database."""
+
+    _tenant_choices: list[Tuple[str, str]] = []
+
+    def __post_init__(self) -> None:
+        # Provide a placeholder so EnumField.__post_init__ doesn't raise;
+        # actual choices are resolved per-request via _get_choices.
+        self.choices = [("", NO_TENANT)]
+        # Skip EnumField.__post_init__ validation by going to grandparent
+        super(EnumField, self).__post_init__()
+
+    def _get_choices(self, request: Request) -> Sequence[Tuple[str, str]]:
+        # EnumField._get_choices is called synchronously from serialize_value;
+        # return the cached choices that were loaded during the async render.
+        return self._tenant_choices or [("", NO_TENANT)]
+
+    async def get_choices(self, request: Request) -> Sequence[Tuple[str, str]]:
+        tenants = await tenants_crud.tenant.list_active(request.state.session)
+        self._tenant_choices = [("", NO_TENANT)] + [
+            (str(t.id), t.name) for t in tenants
+        ]
+        return self._tenant_choices
 
 
 class UserAdminView(ModelView):
     """Admin view for the User model."""
 
-    column_list = ["id", "email", "role", "tenant_id", "is_active", "created_at"]
-    column_searchable_list = ["email"]
-    column_detail_list = [
+    fields = [
         "id",
         "email",
-        "role",
-        "tenant_id",
+        EnumField("role", enum=UserRole, required=True),
+        TenantEnumField("tenant_id", label="Tenant", required=False),
         "is_active",
         "created_at",
         "updated_at",
     ]
+
+    column_list = ["id", "email", "role", "tenant_id", "is_active", "created_at"]
+    column_searchable_list = ["email"]
 
     exclude_fields_from_create = ["hashed_password"]
     exclude_fields_from_edit = ["hashed_password"]
@@ -28,11 +62,9 @@ class UserAdminView(ModelView):
     # Register our custom row-level action
     actions = ["set_password"]
 
-    async def after_create(self, request: Request, obj: User) -> None:
-        """Lock the account until a password is explicitly set."""
+    async def before_create(self, request: Request, data: dict, obj: User) -> None:
+        """Set an unusable password hash before INSERT so the NOT NULL constraint is satisfied."""
         obj.hashed_password = UNUSABLE_PASSWORD
-        # The session is still open — flush so the change persists.
-        await request.state.session.commit()
 
     @action(
         name="set_password",
