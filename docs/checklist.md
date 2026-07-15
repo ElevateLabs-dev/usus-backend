@@ -74,8 +74,8 @@ Core goal: Expose simulation as REST API endpoints.
 
 ### B3. OpenAPI Docs
 
-- [ ] Auto-generated Swagger via FastAPI
-- [ ] Pydantic V2 request/response schemas
+- [x] Auto-generated Swagger via FastAPI
+- [x] Pydantic V2 request/response schemas
 
 ---
 

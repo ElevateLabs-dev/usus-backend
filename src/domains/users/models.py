@@ -1,10 +1,14 @@
 import uuid
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, DateTime, String, func
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.base_model import Base
+
+if TYPE_CHECKING:
+    from src.domains.tenants.models import Tenant
 
 
 class User(Base):
@@ -22,7 +26,12 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("tenants.id"),
         nullable=True,
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tenant: Mapped["Tenant | None"] = relationship(
+        "Tenant",
+        back_populates="users",
+    )

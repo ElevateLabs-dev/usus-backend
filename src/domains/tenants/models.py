@@ -1,9 +1,12 @@
-import uuid
-from sqlalchemy import Boolean, Column, DateTime, String, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.base_model import Base
+
+if TYPE_CHECKING:
+    from src.domains.users.models import User
 
 
 class Tenant(Base):
@@ -16,3 +19,7 @@ class Tenant(Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    users: Mapped[list["User"]] = relationship(
+        "User",
+        back_populates="tenant",
+    )

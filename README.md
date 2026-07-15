@@ -129,7 +129,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 **Start the Celery Worker (in a separate terminal):**
 
 ```bash
-uv run celery -A app.celery_app worker --loglevel=info
+uv run celery -A src.celery_app worker --loglevel=info
 
 ```
 
