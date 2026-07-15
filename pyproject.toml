@@ -46,6 +46,7 @@ testpaths = ["tests"]
 
 [project.scripts]
 seed-admin = "src.cli.seed_admin:seed_admin"
+seed-scenarios = "src.cli.seed_scenarios:seed_scenarios"
 
 [tool.uv]
 package = true
