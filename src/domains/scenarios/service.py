@@ -11,6 +11,11 @@ class ScenarioService:
     def __init__(self, repository: CRUDScenario):
         self.repository = repository
 
+    async def get_scenario_by_id(
+        self, db: AsyncSession, tenant_id: uuid.UUID, scenario_id: uuid.UUID
+    ) -> Scenario | None:
+        return await self.repository.get(db=db, id=scenario_id, tenant_id=tenant_id)
+
     async def list_all_scenarios(
         self, db: AsyncSession, tenant_id: uuid.UUID
     ) -> Sequence[Scenario]:
