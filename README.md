@@ -108,6 +108,10 @@ docker-compose up -d
 # We use `uv run` to ensure it executes strictly within the uv environment
 uv run alembic upgrade head
 
+uv run seed-admin
+
+uv run seed-scenarios
+
 ```
 
 ### 6. Run the Application
