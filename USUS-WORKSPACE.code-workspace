@@ -5,12 +5,11 @@
 			"path": "."
 		},
 		{
-			"name": "usus-frontend",
-			"path": "../usus-frontend"
-		},
-		{
 			"name": "gogo-next-mui-admin",
 			"path": "../../Desktop/gogo-next-mui-admin-template-v7.6.0/source/gogo-next-mui-admin"
+		},
+		{
+			"path": "../usus-frontend"
 		}
 	],
 	"settings": {
