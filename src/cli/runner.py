@@ -3,6 +3,7 @@ import asyncio
 
 from src.core.database import AsyncSessionLocal
 from src.infrastructure.llm.anthropic import AnthropicProvider
+from src.infrastructure.llm.ollama_provider import OllamaProvider
 
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.crud import CRUDScenario
@@ -40,6 +41,7 @@ async def run_cli():
     red_flag_repo = CRUDRedFlag(RedFlag)
 
     llm_provider = AnthropicProvider()
+    llm_provider = OllamaProvider()
     evaluation_service = EvaluationService(
         eval_result_repo, dimension_score_repo, red_flag_repo, llm_provider
     )

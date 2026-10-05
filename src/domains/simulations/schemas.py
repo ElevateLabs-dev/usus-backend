@@ -1,5 +1,7 @@
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
+
 from src.domains.simulations.models import SessionStatus, MessageRole
 
 
@@ -9,7 +11,7 @@ class SessionBase(BaseModel):
 
 
 class SessionCreate(SessionBase):
-    pass
+    user_id: UUID | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -19,6 +21,7 @@ class SessionUpdate(BaseModel):
 class SessionResponse(SessionBase):
     id: UUID
     tenant_id: UUID
+    user_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,7 +37,7 @@ class MessageCreate(MessageBase):
 
 
 class MessageUpdate(MessageBase):
-    pass  # Messages typically aren't updated, but required by CRUDBase
+    pass
 
 
 class MessageResponse(MessageBase):
@@ -68,8 +71,6 @@ class EndSessionResponse(BaseModel):
     evaluation: "EvaluationResultDetailResponse"
 
 
-# Resolved at import time — avoids circular import by using TYPE_CHECKING guard approach.
-# The string annotation is resolved via model_rebuild() called in the router module.
 from src.domains.evaluations.schemas import EvaluationResultDetailResponse  # noqa: E402
 
 EndSessionResponse.model_rebuild()

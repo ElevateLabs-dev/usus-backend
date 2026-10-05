@@ -64,6 +64,7 @@ async def issue_token(
     )
     payload: dict = {
         "user_id": str(user.id),
+        "email": user.email,  #PCMadumere. Added this so to be able to get the email from the token
         "role": user.role,
         "exp": expire,
     }

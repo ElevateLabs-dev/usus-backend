@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../usus-frontend"
+		},
+		{
+			"path": "../../Desktop/gogo-next-mui-admin-template-v7.6.0/source/gogo-next-mui-admin"
+		}
+	],
+	"settings": {
+		"python.terminal.useEnvFile": true
+	}
+}

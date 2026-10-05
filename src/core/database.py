@@ -7,7 +7,7 @@ from src.domains.tenants import models as _tenants_models  # noqa: F401
 from src.domains.users import models as _users_models  # noqa: F401
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/usus_db"
+    "DATABASE_URL", "postgresql+asyncpg://usus_admin:usus_local_password@localhost:5433/usus_dev_db"
 )
 
 # initialize the async engine

@@ -27,3 +27,4 @@ class UserUpdate(BaseModel):
     role: UserRole | None = None
     tenant_id: UUID | None = None
     is_active: bool | None = None
+ 

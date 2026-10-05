@@ -17,6 +17,7 @@ dependencies = [
     "celery>=5.6.2",
     "fastapi[standard]>=0.133.1",       # Comes with uvicorn
     "itsdangerous>=2.2.0",              # For secure token generation# Required by starlette-admin for session security
+    "ollama>=0.6.2",    # For local running of llama model
     "openai>=2.24.0",             # Password hashing
     "pgvector>=0.4.2",                  # For RAG embeddings in PostgreSQL
     "pydantic>=2.12.5",
