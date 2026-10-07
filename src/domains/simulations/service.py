@@ -1,5 +1,4 @@
 import uuid
-from typing import Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +10,7 @@ from src.domains.simulations.models import (
     SessionStatus,
     MessageRole,
 )
+
 from src.domains.simulations.schemas import (
     SessionCreate,
     SessionUpdate,
@@ -24,9 +24,6 @@ from src.domains.simulations.crud import (
 
 from src.domains.scenarios.crud import CRUDScenario
 
-from src.domains.evaluations.service import EvaluationService
-from src.domains.evaluations.models import EvaluationResult
-
 
 class SimulationService:
     def __init__(
@@ -35,13 +32,11 @@ class SimulationService:
         message_repo: CRUDMessage,
         scenario_repo: CRUDScenario,
         llm_provider: LLMProvider,
-        evaluation_service: EvaluationService,
     ):
         self.session_repo = session_repo
         self.message_repo = message_repo
         self.scenario_repo = scenario_repo
         self.llm_provider = llm_provider
-        self.evaluation_service = evaluation_service
 
     async def start_session(
         self,
@@ -131,20 +126,20 @@ class SimulationService:
 
         system_prompt = next(
             (
-                m.content
-                for m in session_msgs
-                if m.role == MessageRole.SYSTEM
+                message.content
+                for message in session_msgs
+                if message.role == MessageRole.SYSTEM
             ),
             "",
         )
 
         llm_messages = [
             {
-                "role": m.role.value,
-                "content": m.content,
+                "role": message.role.value,
+                "content": message.content,
             }
-            for m in session_msgs
-            if m.role != MessageRole.SYSTEM
+            for message in session_msgs
+            if message.role != MessageRole.SYSTEM
         ]
 
         response_text = await self.llm_provider.generate_response(
@@ -171,7 +166,14 @@ class SimulationService:
         db: AsyncSession,
         tenant_id: uuid.UUID,
         session_id: uuid.UUID,
-    ) -> Tuple[Session, EvaluationResult]:
+    ) -> Session:
+        """
+        End the simulation immediately.
+
+        Evaluation is intentionally not performed here.
+        The router queues the background evaluation task after
+        the session is marked as COMPLETED.
+        """
 
         session = await self.session_repo.get(
             db=db,
@@ -181,6 +183,14 @@ class SimulationService:
 
         if not session:
             raise ValueError("Session not found")
+
+        if session.status == SessionStatus.COMPLETED:
+            return session
+
+        if session.status != SessionStatus.IN_PROGRESS:
+            raise ValueError(
+                "Session is not active or has already been evaluated"
+            )
 
         session_update = SessionUpdate(
             status=SessionStatus.COMPLETED
@@ -198,42 +208,4 @@ class SimulationService:
                 "Failed to update session status to COMPLETED"
             )
 
-        session = updated_session
-
-        all_msgs = await self.message_repo.get_by_session(
-            db=db,
-            tenant_id=tenant_id,
-            session_id=session_id,
-        )
-
-        session_msgs = [
-            m
-            for m in all_msgs
-            if m.role != MessageRole.SYSTEM
-        ]
-
-        eval_result = await self.evaluation_service.evaluate_session(
-            db,
-            tenant_id,
-            session,
-            session_msgs,
-        )
-
-        # Mark as evaluated
-        session_update = SessionUpdate(
-            status=SessionStatus.EVALUATED
-        )
-
-        evaluated_session = await self.session_repo.update(
-            db=db,
-            id=session.id,
-            obj_in=session_update,
-            tenant_id=tenant_id,
-        )
-
-        if evaluated_session is None:
-            raise ValueError(
-                "Failed to update session status to EVALUATED"
-            )
-
-        return evaluated_session, eval_result
+        return updated_session

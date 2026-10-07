@@ -1,6 +1,7 @@
 from uuid import UUID
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EvaluationResultBase(BaseModel):
@@ -67,5 +68,9 @@ class RedFlagResponse(RedFlagBase):
 
 
 class EvaluationResultDetailResponse(EvaluationResultResponse):
-    dimension_scores: list[DimensionScoreResponse] = []
-    red_flags: list[RedFlagResponse] = []
+    dimension_scores: list[DimensionScoreResponse] = Field(
+        default_factory=list
+    )
+    red_flags: list[RedFlagResponse] = Field(
+        default_factory=list
+    )

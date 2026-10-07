@@ -25,8 +25,8 @@ class OllamaProvider(LLMProvider):
         self,
         system_prompt: str,
         messages: List[Dict[str, Any]],
-        temperature: float = 0.7,
-        max_tokens: int = 1024,
+        temperature: float = 0.5,
+        max_tokens: int = 180,
     ) -> str:
         """
         Generate a response using Ollama.
