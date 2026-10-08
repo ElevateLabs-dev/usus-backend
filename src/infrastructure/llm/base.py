@@ -14,6 +14,7 @@ class LLMProvider(ABC):
         messages: List[Dict[str, Any]],
         temperature: float = 0.7,
         max_tokens: int = 1024,
+        json_mode: bool = False,
     ) -> str:
         """
         Generate a response from the LLM.
@@ -24,6 +25,7 @@ class LLMProvider(ABC):
                       [{"role": "user" | "assistant", "content": "..."}]
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
+            json_mode: Ask the provider to return a valid JSON object, where supported.
 
         Returns:
             The string response from the model.

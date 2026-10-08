@@ -6,19 +6,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
 from src.core.dependencies import AuthContext, get_auth_context
-
 from src.domains.evaluations.crud import (
     dimension_score as dimension_score_repo,
+)
+from src.domains.evaluations.crud import (
     evaluation_result as eval_result_repo,
+)
+from src.domains.evaluations.crud import (
     red_flag as red_flag_repo,
 )
 from src.domains.evaluations.schemas import EvaluationResultDetailResponse
 from src.domains.evaluations.service import EvaluationService
-
 from src.domains.scenarios.crud import scenario as scenario_repo
-
 from src.domains.simulations.crud import (
     message as message_repo,
+)
+from src.domains.simulations.crud import (
     session as session_repo,
 )
 from src.domains.simulations.models import MessageRole
@@ -30,15 +33,13 @@ from src.domains.simulations.schemas import (
     StartSessionRequest,
 )
 from src.domains.simulations.service import SimulationService
-
-from src.infrastructure.llm.ollama_provider import OllamaProvider
-
+from src.infrastructure.llm.factory import get_llm_provider
 
 # ---------------------------------------------------------------------------
 # Service singletons — stateless, safe to share across requests
 # ---------------------------------------------------------------------------
 
-_llm = OllamaProvider()
+_llm = get_llm_provider()
 
 _eval_service = EvaluationService(
     eval_result_repo=eval_result_repo,
@@ -70,6 +71,7 @@ router = APIRouter(
 # Health
 # ---------------------------------------------------------------------------
 
+
 @router.get("/health")
 async def simulation_health_check():
     return {
@@ -81,6 +83,7 @@ async def simulation_health_check():
 # ---------------------------------------------------------------------------
 # Start simulation
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/start",
@@ -118,6 +121,7 @@ async def start_simulation(
 # ---------------------------------------------------------------------------
 # Send message
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/{session_id}/message",
@@ -172,9 +176,7 @@ async def send_message(
 
     # Exclude the system prompt.
     conv_messages = [
-        message
-        for message in all_messages
-        if message.role != MessageRole.SYSTEM
+        message for message in all_messages if message.role != MessageRole.SYSTEM
     ]
 
     if len(conv_messages) < 2:
@@ -196,6 +198,7 @@ async def send_message(
 # ---------------------------------------------------------------------------
 # End simulation
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/{session_id}/end",
@@ -260,6 +263,7 @@ async def end_simulation(
 # ---------------------------------------------------------------------------
 # Get evaluation
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{session_id}/evaluation",

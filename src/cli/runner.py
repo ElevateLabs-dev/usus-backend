@@ -2,8 +2,7 @@ import uuid
 import asyncio
 
 from src.core.database import AsyncSessionLocal
-from src.infrastructure.llm.anthropic import AnthropicProvider
-from src.infrastructure.llm.ollama_provider import OllamaProvider
+from src.infrastructure.llm.factory import get_llm_provider
 
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.crud import CRUDScenario
@@ -40,8 +39,7 @@ async def run_cli():
     dimension_score_repo = CRUDDimensionScore(DimensionScore)
     red_flag_repo = CRUDRedFlag(RedFlag)
 
-    llm_provider = AnthropicProvider()
-    llm_provider = OllamaProvider()
+    llm_provider = get_llm_provider()
     evaluation_service = EvaluationService(
         eval_result_repo, dimension_score_repo, red_flag_repo, llm_provider
     )

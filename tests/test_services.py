@@ -29,7 +29,7 @@ import src.domains.tenants.models
 
 class MockLLMProvider(LLMProvider):
     async def generate_response(
-        self, system_prompt, messages, temperature=0.7, max_tokens=1024
+        self, system_prompt, messages, temperature=0.7, max_tokens=1024, json_mode=False
     ):
         # Determine based on prompt if it's customer response or evaluation
         if "expert customer service evaluator" in system_prompt:
@@ -117,8 +117,12 @@ async def test_full_simulation_loop(
     scenario_id = scenarios[0].id
 
     # Start Session
-    session = await simulation_service.start_session(db_session, tenant_id, scenario_id)
+    user_id = uuid.uuid4()
+    session = await simulation_service.start_session(
+        db_session, user_id=user_id, tenant_id=tenant_id, scenario_id=scenario_id
+    )
     assert session.status == SessionStatus.IN_PROGRESS
+    assert session.user_id == user_id
 
     # Send Message
     model_msg = await simulation_service.send_message(

@@ -57,12 +57,15 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str
 
     # AI Providers
-    OPENAI_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
+    # Which LLM backs the simulation + evaluation engines: "openai" or "anthropic"
+    LLM_PROVIDER: str = "openai"
+    # Seconds before an LLM call is abandoned, so a slow model can't hang a request
+    LLM_TIMEOUT_SECONDS: float = 60.0
 
-    # Ollama
-    OLLAMA_HOST: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.1:8b"
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4.1-mini"
+    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5"
 
     # AWS Storage
     AWS_ACCESS_KEY_ID: Optional[str] = None

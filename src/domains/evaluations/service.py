@@ -56,7 +56,10 @@ class EvaluationService:
         llm_messages = [{"role": "user", "content": f"Transcript:\n{transcript}"}]
 
         response_text = await self.llm_provider.generate_response(
-            system_prompt=system_prompt, messages=llm_messages, temperature=0.0
+            system_prompt=system_prompt,
+            messages=llm_messages,
+            temperature=0.0,
+            json_mode=True,
         )
 
         try:
