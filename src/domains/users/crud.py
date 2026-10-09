@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.base_crud import CRUDBaseRoot
@@ -10,7 +10,10 @@ from src.domains.users.schemas import UserCreate, UserUpdate
 
 class CRUDUser(CRUDBaseRoot[User, UserCreate, UserUpdate]):
     async def get_by_email(self, db: AsyncSession, email: str) -> User | None:
-        result = await db.execute(select(self.model).where(self.model.email == email))
+        # Case-insensitive so "Jane@Org.com" and "jane@org.com" are the same account.
+        result = await db.execute(
+            select(self.model).where(func.lower(self.model.email) == email.lower())
+        )
         return result.scalar_one_or_none()
 
     async def create(  # type: ignore[override]
