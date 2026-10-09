@@ -1,9 +1,10 @@
-import anthropic
 from typing import Any, Dict, List
 
+import anthropic
 from anthropic.types import TextBlock
-from src.infrastructure.llm.base import LLMProvider
+
 from src.core.config import settings
+from src.infrastructure.llm.base import LLMProvider
 
 
 class AnthropicProvider(LLMProvider):

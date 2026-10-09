@@ -1,7 +1,8 @@
 import enum
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Text, Enum, ForeignKey
+from sqlalchemy import DateTime, Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +48,11 @@ class Session(TenantAwareBase):
         ),
         default=SessionStatus.NOT_STARTED,
         nullable=False,
+    )
+
+    # Set when the trainee ends the session (start time is created_at)
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     scenario: Mapped[Scenario] = relationship()

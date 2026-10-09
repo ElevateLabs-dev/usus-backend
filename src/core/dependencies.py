@@ -26,12 +26,16 @@ class AuthContext:
     user_id: UUID
     tenant_id: UUID | None  # None for unscoped platform-admin tokens
     role: UserRole
+    must_change_password: bool = False
 
 
-def get_auth_context(token: str = Depends(oauth2_scheme)) -> AuthContext:
+def get_auth_context_allow_password_change(
+    token: str = Depends(oauth2_scheme),
+) -> AuthContext:
     """
-    FastAPI dependency that decodes a Bearer JWT and returns a full
-    AuthContext (user_id, tenant_id, role).
+    Decodes a Bearer JWT into an AuthContext WITHOUT enforcing the first-login
+    password change. Only for the endpoints a user needs while their temporary
+    password is still active (change-password, /users/me).
 
     Raises HTTP 401 if the token is missing, malformed, expired, or
     does not contain the required claims.
@@ -58,9 +62,28 @@ def get_auth_context(token: str = Depends(oauth2_scheme)) -> AuthContext:
             user_id=UUID(user_id_raw),
             tenant_id=UUID(tenant_id_raw) if tenant_id_raw else None,
             role=UserRole(role_raw),
+            must_change_password=bool(payload.get("pwd_change", False)),
         )
     except (ValueError, KeyError):
         raise credentials_exception
+
+
+def get_auth_context(
+    ctx: AuthContext = Depends(get_auth_context_allow_password_change),
+) -> AuthContext:
+    """
+    FastAPI dependency that returns the caller's AuthContext (user_id,
+    tenant_id, role).
+
+    Raises HTTP 401 for invalid tokens, and HTTP 403 while the user still has
+    to replace their temporary password.
+    """
+    if ctx.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required",
+        )
+    return ctx
 
 
 def get_current_tenant_id(

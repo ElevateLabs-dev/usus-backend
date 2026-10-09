@@ -37,9 +37,11 @@
 
 # ====================================
 
+from typing import Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from typing import Optional
 
 class Settings(BaseSettings):
     # core
@@ -48,7 +50,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str
 
     # infrastructure
+    # Any Postgres URL, e.g. Neon's "postgresql://...?sslmode=require"
+    # (adapted for asyncpg by async_database_url below).
     DATABASE_URL: str
+    # Disable connection pooling (used by the Celery worker, which runs each task
+    # in a fresh event loop).
+    DB_NULL_POOL: bool = False
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
 
@@ -67,6 +74,14 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-haiku-4-5"
 
+    # Email (trainee invites) via Resend. Without an API key, emails are only
+    # printed to the server log (local development).
+    RESEND_API_KEY: Optional[str] = None
+    # Must be on a domain verified in Resend (onboarding@resend.dev works for testing)
+    EMAIL_FROM: str = "Usus <onboarding@resend.dev>"
+    # Where trainees sign in; used for the link in invite emails
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # AWS Storage
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
@@ -81,3 +96,26 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def async_database_url(url: str) -> str:
+    """
+    Adapt a standard Postgres URL (e.g. copied from Neon) for SQLAlchemy + asyncpg:
+    - postgres:// or postgresql://  ->  postgresql+asyncpg://
+    - sslmode=require               ->  ssl=require (asyncpg's name for it)
+    - channel_binding=...           ->  dropped (not an asyncpg option)
+    """
+    parts = urlsplit(url)
+    scheme = parts.scheme
+    if scheme in ("postgres", "postgresql"):
+        scheme = "postgresql+asyncpg"
+
+    query = dict(parse_qsl(parts.query))
+    sslmode = query.pop("sslmode", None)
+    query.pop("channel_binding", None)
+    if sslmode and "ssl" not in query:
+        query["ssl"] = sslmode
+
+    return urlunsplit(
+        (scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+    )

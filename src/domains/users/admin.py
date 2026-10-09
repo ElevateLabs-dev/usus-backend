@@ -105,6 +105,7 @@ class UserAdminView(ModelView):
     fields = [
         "id",
         "email",
+        "full_name",
         EnumField(
             "role",
             enum=UserRole,
@@ -117,6 +118,8 @@ class UserAdminView(ModelView):
             required=False,
         ),
         "is_active",
+        "must_change_password",
+        "invite_sent_at",
         "created_at",
         "updated_at",
     ]
@@ -124,9 +127,12 @@ class UserAdminView(ModelView):
     column_list = [
         "id",
         "email",
+        "full_name",
         "role",
         "tenant",
         "is_active",
+        "must_change_password",
+        "invite_sent_at",
         "created_at",
     ]
 
