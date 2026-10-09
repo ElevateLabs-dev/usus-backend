@@ -6,6 +6,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /bin/
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_HTTP_TIMEOUT=120 \
     PYTHONUNBUFFERED=1
 
 # Install dependencies first so this layer is cached between code changes
@@ -25,4 +26,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
 
 # Render (and most hosts) set $PORT; default to 8000 locally.
-CMD ["sh", "-c", "exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips '*'"]
+# RUN_MIGRATIONS=true applies database migrations before the API starts (for
+# hosts/plans without a pre-deploy step); if they fail, the container stops.
+CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head || exit 1; fi; exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips '*'"]

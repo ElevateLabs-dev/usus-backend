@@ -136,7 +136,7 @@ uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ## Deployment (Render + Neon)
 
 - **Database:** [Neon](https://neon.tech) Postgres — paste its connection string into `DATABASE_URL` unchanged.
-- **App:** [Render](https://render.com) web service `usus-api`, built from the `Dockerfile` via the `render.yaml` Blueprint (Dashboard → New → Blueprint). It runs `alembic upgrade head` before each deploy.
+- **App:** [Render](https://render.com) web service `usus-api`, built from the `Dockerfile` via the `render.yaml` Blueprint (Dashboard → New → Blueprint). The container runs `alembic upgrade head` on start (`RUN_MIGRATIONS=true`), since the free plan has no pre-deploy command.
 - AI evaluations run as background tasks inside the API, so there is no separate worker or Redis.
 
 ## Key Development Guidelines
