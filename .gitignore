@@ -66,3 +66,6 @@ Thumbs.db
 
 # PyCharm / IntelliJ
 .idea/
+
+# Ignore workspace files
+USUS-WORKSPACE.code-workspace
