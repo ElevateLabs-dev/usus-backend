@@ -136,7 +136,7 @@ async def test_full_simulation_loop(
     assert model_msg.role == MessageRole.MODEL
     assert model_msg.content == "I am a mock response from the customer."
 
-    # End Session: marks it completed; evaluation runs separately (Celery task)
+    # End Session: marks it completed; evaluation runs separately (background task)
     completed = await simulation_service.end_session(db_session, tenant_id, session.id)
     assert completed.status == SessionStatus.COMPLETED
     assert completed.ended_at is not None

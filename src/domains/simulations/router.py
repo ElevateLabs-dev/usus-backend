@@ -1,15 +1,15 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.celery_app import celery_app
-from src.core.database import get_db
+from src.core.database import AsyncSessionLocal, get_db
 from src.core.dependencies import AuthContext, get_auth_context
 from src.domains.evaluations.crud import (
     evaluation_result as eval_result_repo,
 )
+from src.domains.evaluations.runner import run_evaluation
 from src.domains.evaluations.schemas import (
     EvaluationResultDetailResponse,
 )
@@ -47,12 +47,8 @@ _simulation_service = SimulationService(
 )
 
 
-def queue_evaluation(session_id: UUID, tenant_id: UUID) -> None:
-    """Hand the (slow) AI evaluation to the Celery worker."""
-    celery_app.send_task(
-        "src.domains.evaluations.tasks.generate_evaluation_report",
-        args=[str(session_id), str(tenant_id)],
-    )
+# Session factory used by the background evaluation (swapped out in tests).
+_session_factory = AsyncSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +213,7 @@ async def end_simulation(
     session_id: UUID,
     ctx: Annotated[AuthContext, Depends(get_auth_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     session = await _owned_session(db, ctx, session_id)
 
@@ -233,10 +230,16 @@ async def end_simulation(
             detail=str(exc),
         )
 
-    # Evaluation is intentionally queued in the background.
+    # Evaluation runs in the background after the response is sent.
     # The API returns immediately instead of waiting for the LLM.
     if completed_session.status == SessionStatus.COMPLETED:
-        queue_evaluation(session_id, session.tenant_id)
+        background_tasks.add_task(
+            run_evaluation,
+            session_id,
+            session.tenant_id,
+            _session_factory,
+            _simulation_service.llm_provider,
+        )
 
     return completed_session
 

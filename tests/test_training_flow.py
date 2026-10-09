@@ -19,10 +19,9 @@ from src.core.base_model import Base
 from src.core.database import get_db
 from src.core.security import hash_password
 from src.core.training import SkillDimension
+from src.domains.evaluations import router as evaluations_router
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.service import ScenarioService
-from src.domains.evaluations import tasks as evaluation_tasks
-from src.domains.evaluations.service import EvaluationFailedError
 from src.domains.simulations import router as simulations_router
 from src.domains.tenants.models import Tenant
 from src.domains.users.models import User
@@ -89,34 +88,17 @@ def llm(monkeypatch):
     return fake
 
 
-@pytest.fixture
-def queued(monkeypatch):
-    """Evaluations the API hands to Celery (captured instead of sent)."""
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        simulations_router,
-        "queue_evaluation",
-        lambda session_id, tenant_id: calls.append((str(session_id), str(tenant_id))),
-    )
-    return calls
-
-
-async def _run_worker(queued, session_factory, llm):
-    """Do what the Celery worker does for each queued evaluation."""
-    while queued:
-        session_id, tenant_id = queued.pop(0)
-        await evaluation_tasks._generate_evaluation_report(
-            session_id, tenant_id, session_factory=session_factory, llm_provider=llm
-        )
-
-
 @pytest_asyncio.fixture
-async def client(session_factory, llm, queued):
+async def client(session_factory, llm, monkeypatch):
     async def override_get_db():
         async with session_factory() as session:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    # Background evaluations use the test database too
+    monkeypatch.setattr(simulations_router, "_session_factory", session_factory)
+    monkeypatch.setattr(evaluations_router, "_session_factory", session_factory)
+    monkeypatch.setattr(evaluations_router, "_llm_provider", llm)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -223,32 +205,21 @@ async def test_categories_scenarios_and_brief(client, session_factory):
         assert hidden not in brief
 
 
-async def test_role_play_evaluation_history_and_progress(
-    client, session_factory, llm, queued
-):
+async def test_role_play_evaluation_history_and_progress(client, session_factory, llm):
     await _make_org(session_factory)
     trainee = await _auth(client, "trainee@acme.com")
     scenario_id = await _scenario_id(client, trainee)
 
     session_id = await _play(client, trainee, scenario_id, ["Hello", "Refunding now"])
 
-    # Ending returns at once; the evaluation is queued for the Celery worker
+    # Ending responds first; the evaluation then runs as a background task
+    llm.evaluations.append(
+        evaluation_json({"accuracy": 100, "empathy": 30, "efficiency": 60})
+    )
     ended = await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
     assert ended.status_code == 200, ended.text
     assert ended.json()["status"] == "completed"
     assert ended.json()["ended_at"] is not None
-    assert len(queued) == 1
-    pending = await client.get(
-        f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
-    )
-    assert pending.status_code == 404
-    assert pending.json()["detail"] == "Evaluation is still being generated."
-
-    llm.evaluations.append(
-        evaluation_json({"accuracy": 100, "empathy": 30, "efficiency": 60})
-    )
-    await _run_worker(queued, session_factory, llm)
-
     response = await client.get(
         f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
     )
@@ -264,10 +235,10 @@ async def test_role_play_evaluation_history_and_progress(
         "Could have offered the voucher earlier"
     ]
 
-    # Ending an evaluated session again changes nothing and queues nothing
+    # Ending an evaluated session again changes nothing
     again = await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
     assert again.json()["status"] == "evaluated"
-    assert queued == [] and llm.evaluation_calls == 1
+    assert llm.evaluation_calls == 1
 
     # History list + detail
     page = (await client.get("/api/v1/simulations/", headers=trainee)).json()
@@ -296,9 +267,8 @@ async def test_role_play_evaluation_history_and_progress(
 
     # A second, better session -> progress shows improvement
     second = await _play(client, trainee, scenario_id)
-    await client.post(f"/api/v1/simulations/{second}/end", headers=trainee)
     llm.evaluations.append(evaluation_json({d.value: 90 for d in SkillDimension}))
-    await _run_worker(queued, session_factory, llm)
+    await client.post(f"/api/v1/simulations/{second}/end", headers=trainee)
 
     progress = (await client.get("/api/v1/progress/me", headers=trainee)).json()
     assert progress["sessions_completed"] == 2
@@ -331,25 +301,28 @@ async def test_role_play_evaluation_history_and_progress(
     assert report.json()["average_score"] == 82
 
 
-async def test_failed_evaluation_can_be_retried(client, session_factory, llm, queued):
+async def test_failed_evaluation_can_be_retried(client, session_factory, llm):
     await _make_org(session_factory)
     trainee = await _auth(client, "trainee@acme.com")
     session_id = await _play(client, trainee, await _scenario_id(client, trainee))
-    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
 
-    # Bad output twice -> the task fails (Celery retries it), nothing is saved
+    # Bad output twice -> the background evaluation fails, nothing is saved
     llm.evaluations += ["not json", json.dumps({"summary": "missing dimensions"})]
-    with pytest.raises(EvaluationFailedError):
-        await _run_worker(queued, session_factory, llm)
+    ended = await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
+    assert ended.status_code == 200
     detail = (
         await client.get(f"/api/v1/simulations/{session_id}", headers=trainee)
     ).json()
     assert detail["status"] == "completed" and detail["evaluation"] is None
+    pending = await client.get(
+        f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
+    )
+    assert pending.status_code == 404
+    assert pending.json()["detail"] == "Evaluation is still being generated."
 
-    # Ending again re-queues it; markdown-wrapped JSON is accepted
-    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
+    # Ending again retries; markdown-wrapped JSON is accepted
     llm.evaluations += ["```json\n" + evaluation_json() + "\n```"]
-    await _run_worker(queued, session_factory, llm)
+    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
 
     response = await client.get(
         f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
@@ -359,8 +332,39 @@ async def test_failed_evaluation_can_be_retried(client, session_factory, llm, qu
     assert llm.evaluation_calls == 3
 
 
+async def test_manager_can_rerun_evaluation(client, session_factory, llm):
+    await _make_org(session_factory)
+    trainee = await _auth(client, "trainee@acme.com")
+    manager = await _auth(client, "manager@acme.com")
+    session_id = await _play(client, trainee, await _scenario_id(client, trainee))
+
+    # Still in progress -> nothing to evaluate yet
+    early = await client.post(
+        f"/api/v1/evaluations/{session_id}/generate", headers=manager
+    )
+    assert early.status_code == 409
+
+    llm.evaluations += ["not json", "still not json"]  # first evaluation fails
+    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
+
+    rerun = await client.post(
+        f"/api/v1/evaluations/{session_id}/generate", headers=manager
+    )
+    assert rerun.status_code == 202
+    evaluation = await client.get(
+        f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
+    )
+    assert evaluation.status_code == 200
+
+    # Trainees cannot use the manager endpoint
+    denied = await client.post(
+        f"/api/v1/evaluations/{session_id}/generate", headers=trainee
+    )
+    assert denied.status_code == 403
+
+
 async def test_session_without_trainee_messages_scores_zero(
-    client, session_factory, llm, queued
+    client, session_factory, llm
 ):
     await _make_org(session_factory)
     trainee = await _auth(client, "trainee@acme.com")
@@ -368,7 +372,6 @@ async def test_session_without_trainee_messages_scores_zero(
 
     ended = await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
     assert ended.status_code == 200
-    await _run_worker(queued, session_factory, llm)
 
     evaluation = await client.get(
         f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
@@ -414,9 +417,7 @@ async def test_progress_permissions(client, session_factory):
     ).status_code == 404
 
 
-async def test_trainees_cannot_touch_each_others_sessions(
-    client, session_factory, queued
-):
+async def test_trainees_cannot_touch_each_others_sessions(client, session_factory):
     tenant_id = await _make_org(session_factory)
     async with session_factory() as db:
         db.add(
@@ -442,4 +443,3 @@ async def test_trainees_cannot_touch_each_others_sessions(
         await client.get(f"{base}/evaluation", headers=colleague)
     ).status_code == 404
     assert (await client.get(base, headers=colleague)).status_code == 404
-    assert queued == []

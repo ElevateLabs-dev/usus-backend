@@ -1,5 +1,6 @@
-# Render Blueprint: the API (web service) and the Celery worker, both built
-# from ./Dockerfile. Database = Neon, Redis = Upstash (external).
+# Render Blueprint: the API (web service), built from ./Dockerfile.
+# Database = Neon (external). AI evaluations run in the background inside the
+# API process, so no separate worker or Redis is needed.
 #
 # Values marked `sync: false` are secrets: Render asks for them once when the
 # Blueprint is first created (Dashboard → New → Blueprint), then keep them in
@@ -31,10 +32,6 @@ services:
         value: "60"
       - key: DATABASE_URL # Neon connection string, pasted unchanged
         sync: false
-      - key: CELERY_BROKER_URL # rediss://default:<token>@<host>.upstash.io:6379/0
-        sync: false
-      - key: CELERY_RESULT_BACKEND # same Upstash URL
-        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: RESEND_API_KEY
@@ -42,40 +39,4 @@ services:
       - key: EMAIL_FROM # e.g. "Usus <no-reply@your-verified-domain.com>"
         sync: false
       - key: FRONTEND_URL # e.g. https://app.yourdomain.com (link in invite emails)
-        sync: false
-
-  # Runs the AI evaluations queued when a trainee ends a session.
-  # Render has no free plan for background workers.
-  - type: worker
-    name: usus-worker
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    region: frankfurt
-    dockerCommand: >-
-      celery -A src.celery_app worker --loglevel=info --concurrency=2
-      --without-gossip --without-mingle --without-heartbeat
-    envVars:
-      - key: ENVIRONMENT
-        value: production
-      # Required by the app's settings; not used by the worker itself.
-      - key: SECRET_KEY
-        generateValue: true
-      - key: ADMIN_PASSWORD
-        generateValue: true
-      # Each task runs in a fresh event loop, so don't pool DB connections.
-      - key: DB_NULL_POOL
-        value: "true"
-      - key: LLM_PROVIDER
-        value: openai
-      - key: OPENAI_MODEL
-        value: gpt-4.1-mini
-      - key: LLM_TIMEOUT_SECONDS
-        value: "60"
-      - key: DATABASE_URL
-        sync: false
-      - key: CELERY_BROKER_URL
-        sync: false
-      - key: CELERY_RESULT_BACKEND
-        sync: false
-      - key: OPENAI_API_KEY
         sync: false

@@ -87,9 +87,5 @@ class RedFlagResponse(RedFlagBase):
 
 
 class EvaluationResultDetailResponse(EvaluationResultResponse):
-    dimension_scores: list[DimensionScoreResponse] = Field(
-        default_factory=list
-    )
-    red_flags: list[RedFlagResponse] = Field(
-        default_factory=list
-    )
+    dimension_scores: list[DimensionScoreResponse] = Field(default_factory=list)
+    red_flags: list[RedFlagResponse] = Field(default_factory=list)

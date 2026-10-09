@@ -18,23 +18,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for Celery Task Queue and potentially WebSockets/Caching
-  redis:
-    image: redis:7-alpine
-    container_name: usus_redis
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
 volumes:
   postgres_data:
     name: usus_postgres_data
-  redis_data:
-    name: usus_redis_data

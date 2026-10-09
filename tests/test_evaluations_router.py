@@ -2,13 +2,12 @@
 Tests for POST /api/v1/evaluations/{simulation_id}/generate
 
 Strategy:
-- No real database or Celery worker needed.
+- Authentication checks only; no database needed.
 - We mint JWTs using the same SECRET_KEY as the app.
-- Celery's .delay() call is mocked so no broker connection is required.
+- The full re-run flow is covered in test_training_flow.py.
 """
 
 import uuid
-from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -36,42 +35,6 @@ async def test_trigger_evaluation_unauthorized():
         response = await client.post(f"/api/v1/evaluations/{SIMULATION_ID}/generate")
 
     assert response.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_trigger_evaluation_authorized():
-    """
-    A valid JWT containing tenant_id must:
-    - pass the dependency
-    - trigger generate_evaluation_report.delay(...)
-    - return 200 with task_id and status='processing'
-    """
-    token = make_token(
-        {"tenant_id": TENANT_ID, "user_id": str(uuid.uuid4()), "role": "manager"}
-    )
-
-    mock_task = MagicMock()
-    mock_task.id = "mock-task-id-abc123"
-
-    with patch(
-        "src.domains.evaluations.router.generate_evaluation_report.delay",
-        return_value=mock_task,
-    ) as mock_delay:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                f"/api/v1/evaluations/{SIMULATION_ID}/generate",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["task_id"] == "mock-task-id-abc123"
-    assert body["status"] == "processing"
-
-    # Verify Celery was called with the right args
-    mock_delay.assert_called_once_with(SIMULATION_ID, uuid.UUID(TENANT_ID))
 
 
 @pytest.mark.asyncio

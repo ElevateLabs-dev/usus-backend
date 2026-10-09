@@ -34,6 +34,8 @@ Usus is an enterprise-grade AI simulation platform designed for human-staff trai
 
 ### 2.5 Background Processing: Celery + Redis
 
+> **Superseded (Oct 2026):** for the MVP, evaluations run as FastAPI background tasks inside the API process; Celery and Redis were removed to keep deployment to a single service. Revisit if background workload grows.
+
 - **Decision:** Use **Celery** as the task queue and **Redis** as the message broker.
 - **Rationale:** AI evaluation generation and document vectorization are computationally expensive. Moving these to asynchronous Celery workers ensures the main FastAPI server is never blocked, maintaining a responsive UI and fast WebRTC signaling.
 

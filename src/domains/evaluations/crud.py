@@ -53,7 +53,9 @@ class CRUDEvaluationResult(
         return evaluation
 
 
-class CRUDDimensionScore(CRUDBaseRoot[DimensionScore, DimensionScoreCreate, DimensionScoreUpdate]):
+class CRUDDimensionScore(
+    CRUDBaseRoot[DimensionScore, DimensionScoreCreate, DimensionScoreUpdate]
+):
     pass
 
 

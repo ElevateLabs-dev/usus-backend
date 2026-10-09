@@ -3,7 +3,6 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from src.core.config import async_database_url, settings
 
@@ -23,10 +22,7 @@ def _engine_options(url: str) -> dict[str, Any]:
         "pool_pre_ping": True,
     }
 
-    if settings.DB_NULL_POOL:
-        options["poolclass"] = NullPool
-    else:
-        options.update(pool_size=5, max_overflow=5, pool_recycle=300)
+    options.update(pool_size=5, max_overflow=5, pool_recycle=300)
 
     if "-pooler." in url:
         # Neon's pooled endpoint (PgBouncer, transaction mode) cannot reuse

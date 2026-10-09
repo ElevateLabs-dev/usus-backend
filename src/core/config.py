@@ -53,11 +53,6 @@ class Settings(BaseSettings):
     # Any Postgres URL, e.g. Neon's "postgresql://...?sslmode=require"
     # (adapted for asyncpg by async_database_url below).
     DATABASE_URL: str
-    # Disable connection pooling (used by the Celery worker, which runs each task
-    # in a fresh event loop).
-    DB_NULL_POOL: bool = False
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
 
     # Admin dashboard credentials
     ADMIN_USERNAME: str = "admin"
