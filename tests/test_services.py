@@ -5,6 +5,7 @@ import json
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.core.base_model import Base
+from src.core.training import SkillDimension, TrainingCategory
 
 from src.infrastructure.llm.base import LLMProvider
 from src.domains.scenarios.models import Scenario
@@ -21,7 +22,7 @@ from src.domains.evaluations.crud import (
     CRUDDimensionScore,
     CRUDRedFlag,
 )
-from src.domains.evaluations.service import EVALUATION_DIMENSIONS, EvaluationService
+from src.domains.evaluations.service import EvaluationService
 
 # It is important to import all models so Base.metadata knows about them
 import src.domains.tenants.models
@@ -32,15 +33,18 @@ class MockLLMProvider(LLMProvider):
         self, system_prompt, messages, temperature=0.7, max_tokens=1024, json_mode=False
     ):
         # Determine based on prompt if it's customer response or evaluation
-        if "expert customer service evaluator" in system_prompt:
+        if json_mode:  # the evaluator
             return json.dumps(
                 {
-                    "overall_score": 90,
                     "summary": "Great job handling the customer.",
-                    "dimensions": [
-                        {"name": name, "score": 9, "rationale": "Well handled"}
-                        for name in EVALUATION_DIMENSIONS
-                    ],
+                    "dimensions": {
+                        dimension.value: {"score": 90, "rationale": "Well handled"}
+                        for dimension in SkillDimension
+                    },
+                    "strengths": ["Acknowledged the customer's frustration"],
+                    "improvements": [],
+                    "missed_opportunities": [],
+                    "recommendations": ["Confirm next steps before closing"],
                     "red_flags": [],
                 }
             )
@@ -102,11 +106,12 @@ def simulation_service(scenario_service, evaluation_service):
 @pytest.mark.asyncio
 async def test_scenario_service_seed(db_session, scenario_service, tenant_id):
     scenarios = await scenario_service.seed_defaults(db_session, tenant_id)
-    assert len(scenarios) == 3
+    assert len(scenarios) == 5
+    assert {s.category for s in scenarios} == {c.value for c in TrainingCategory}
 
     # Second time should return the same
     scenarios2 = await scenario_service.seed_defaults(db_session, tenant_id)
-    assert len(scenarios2) == 3
+    assert len(scenarios2) == 5
 
 
 @pytest.mark.asyncio
@@ -131,9 +136,10 @@ async def test_full_simulation_loop(
     assert model_msg.role == MessageRole.MODEL
     assert model_msg.content == "I am a mock response from the customer."
 
-    # End Session: marks it completed; evaluation runs separately (Celery task)
+    # End Session: marks it completed; evaluation runs separately (background task)
     completed = await simulation_service.end_session(db_session, tenant_id, session.id)
     assert completed.status == SessionStatus.COMPLETED
+    assert completed.ended_at is not None
 
     messages = await CRUDMessage(Message).get_by_session(
         db_session, tenant_id, session.id
@@ -146,3 +152,11 @@ async def test_full_simulation_loop(
     )
     assert eval_result.overall_score == 90
     assert eval_result.summary == "Great job handling the customer."
+    assert eval_result.strengths == ["Acknowledged the customer's frustration"]
+
+    # Saving the evaluation marks the session evaluated (same transaction)
+    assert completed.status == SessionStatus.EVALUATED
+
+    # Ending again is safe and leaves the session as it is
+    again = await simulation_service.end_session(db_session, tenant_id, session.id)
+    assert again.id == completed.id and again.status == SessionStatus.EVALUATED

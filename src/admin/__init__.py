@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from starlette_admin.contrib.sqla import Admin
 
 from src.admin.auth import AdminAuthProvider
-from src.core.config import settings
 from src.core.database import engine
 from src.domains.evaluations.admin import (
     DimensionScoreAdminView,

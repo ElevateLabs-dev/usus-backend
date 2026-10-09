@@ -10,7 +10,7 @@ This repository houses the core API, WebSocket/WebRTC streaming engine, RAG pipe
 - **Data Validation:** Pydantic V2
 - **ORM:** SQLAlchemy 2.0 (via `asyncpg`)
 - **Database Migrations:** Alembic
-- **Background Tasks:** Celery + Redis
+- **Background Tasks:** FastAPI background tasks (AI evaluations run after the response is sent)
 - **Admin Dashboard:** Starlette-Admin
 - **Vector Store (RAG):** pgvector / Pinecone (Configurable)
 - **AI Integration:** Model-agnostic wrappers (Claude, OpenAI)
@@ -27,7 +27,6 @@ usus_backend/
 │   ├── core/               # App-wide settings (DB connections, security, config)
 │   ├── domains/            # Core business modules (Tenants, Simulations, Evaluations, etc.)
 │   ├── utils/              # Domain-agnostic helpers (LLM clients, S3 storage, Audio)
-│   ├── celery_app.py       # Celery worker initialization
 │   └── main.py             # FastAPI application entry point
 └── pyproject.toml          # Python dependencies
 
@@ -40,7 +39,7 @@ We strictly use **[uv](https://github.com/astral-sh/uv)** for virtual environmen
 ### 1. Prerequisites
 
 - Python 3.11+
-- Docker & Docker Compose (for PostgreSQL and Redis)
+- Docker & Docker Compose (for a local PostgreSQL), or a [Neon](https://neon.tech) database
 - **uv** installed on your system.
 
 **To install `uv`:**
@@ -100,7 +99,7 @@ cp .env.example .env
 
 ### 5. Start Infrastructure & Run Migrations
 
-Spin up your local PostgreSQL (pgvector) database and Redis broker, then run the Alembic migrations.
+Spin up your local PostgreSQL (pgvector) database (skip this if `DATABASE_URL` points to Neon), then run the Alembic migrations.
 
 ```bash
 docker-compose up -d
@@ -127,25 +126,24 @@ uv run seed-demo
 uv run fastapi dev src/main.py
 
 # or directly via uvicorn
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 ```
 
 - API Documentation: `http://localhost:8000/docs`
 - Admin Dashboard: `http://localhost:8000/admin`
 
-**Start the Celery Worker (in a separate terminal):**
+## Deployment (Render + Neon)
 
-```bash
-uv run celery -A src.celery_app worker --loglevel=info
-
-```
+- **Database:** [Neon](https://neon.tech) Postgres — paste its connection string into `DATABASE_URL` unchanged.
+- **App:** [Render](https://render.com) web service `usus-api`, built from the `Dockerfile` via the `render.yaml` Blueprint (Dashboard → New → Blueprint). It runs `alembic upgrade head` before each deploy.
+- AI evaluations run as background tasks inside the API, so there is no separate worker or Redis.
 
 ## Key Development Guidelines
 
 1. **Multi-Tenancy is Mandatory:** Every database model that belongs to a specific company must include a `tenant_id` foreign key. Always filter queries by `tenant_id` at the CRUD layer to prevent cross-tenant data leaks.
 2. **Async Database Queries:** We use SQLAlchemy 2.0's asynchronous engine. Always use `await session.execute(...)` instead of synchronous calls. Avoid lazy-loading relationships; use `selectinload` for eager loading.
-3. **Heavy AI Tasks go to Celery:** Never block a FastAPI endpoint waiting for an LLM to generate a complex evaluation report. Return a `task_id` immediately and let the Celery worker handle the LLM call in the background.
+3. **Slow AI Tasks run in the background:** Never make a request wait for a long LLM job such as an evaluation report. Return immediately and run it with FastAPI `BackgroundTasks`; the client polls for the result.
 
 ## Testing
 

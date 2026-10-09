@@ -67,5 +67,7 @@ Thumbs.db
 # PyCharm / IntelliJ
 .idea/
 
-# Ignore workspace files
+# =========================
+# Editor workspace
+# =========================
 USUS-WORKSPACE.code-workspace

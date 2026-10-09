@@ -1,0 +1,42 @@
+# Render Blueprint: the API (web service), built from ./Dockerfile.
+# Database = Neon (external). AI evaluations run in the background inside the
+# API process, so no separate worker or Redis is needed.
+#
+# Values marked `sync: false` are secrets: Render asks for them once when the
+# Blueprint is first created (Dashboard → New → Blueprint), then keep them in
+# each service's Environment tab.
+services:
+  - type: web
+    name: usus-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt # closest Render region to Neon eu-west-2 (London)
+    plan: free # free instances sleep after 15 min idle; upgrade for production
+    healthCheckPath: /health
+    # Apply database migrations (Neon) before each new version goes live.
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: LLM_TIMEOUT_SECONDS
+        value: "60"
+      - key: DATABASE_URL # Neon connection string, pasted unchanged
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM # e.g. "Usus <no-reply@your-verified-domain.com>"
+        sync: false
+      - key: FRONTEND_URL # e.g. https://app.yourdomain.com (link in invite emails)
+        sync: false

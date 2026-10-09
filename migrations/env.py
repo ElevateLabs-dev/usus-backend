@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from src.core.base_model import Base
-from src.core.config import settings
+from src.core.config import async_database_url, settings
 
 # Import models so Alembic can discover them
 import src.domains.tenants.models
@@ -22,7 +22,11 @@ import src.domains.users.models
 config = context.config
 
 # Override the sqlalchemy.url option with the value from our environment variable
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Adapted for asyncpg. Migrations use Neon's direct endpoint rather than the
+# "-pooler" one (DDL through PgBouncer is unreliable). "%" is escaped because
+# alembic's config uses interpolation.
+_migration_url = async_database_url(settings.DATABASE_URL).replace("-pooler.", ".")
+config.set_main_option("sqlalchemy.url", _migration_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
