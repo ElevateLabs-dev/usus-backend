@@ -1,28 +1,26 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.infrastructure.llm.base import LLMProvider
-
-from src.domains.simulations.models import (
-    Session,
-    Message,
-    SessionStatus,
-    MessageRole,
+from src.domains.scenarios.crud import CRUDScenario
+from src.domains.scenarios.prompts import build_customer_prompt
+from src.domains.simulations.crud import (
+    CRUDMessage,
+    CRUDSession,
 )
-
+from src.domains.simulations.models import (
+    Message,
+    MessageRole,
+    Session,
+    SessionStatus,
+)
 from src.domains.simulations.schemas import (
+    MessageCreate,
     SessionCreate,
     SessionUpdate,
-    MessageCreate,
 )
-
-from src.domains.simulations.crud import (
-    CRUDSession,
-    CRUDMessage,
-)
-
-from src.domains.scenarios.crud import CRUDScenario
+from src.infrastructure.llm.base import LLMProvider
 
 
 class SimulationService:
@@ -66,15 +64,7 @@ class SimulationService:
             tenant_id=tenant_id,
         )
 
-        system_prompt_content = (
-            scenario.system_prompt
-            if scenario.system_prompt
-            else (
-                f"You are a {scenario.persona.value} customer. "
-                f"Scenario: {scenario.name}. "
-                f"{scenario.description}"
-            )
-        )
+        system_prompt_content = build_customer_prompt(scenario)
 
         sys_msg_in = MessageCreate(
             session_id=session.id,
@@ -184,16 +174,17 @@ class SimulationService:
         if not session:
             raise ValueError("Session not found")
 
-        if session.status == SessionStatus.COMPLETED:
+        # Already ended: safe to call again (the router re-queues the
+        # evaluation for a COMPLETED session, which retries a failed one).
+        if session.status in (SessionStatus.COMPLETED, SessionStatus.EVALUATED):
             return session
 
         if session.status != SessionStatus.IN_PROGRESS:
-            raise ValueError(
-                "Session is not active or has already been evaluated"
-            )
+            raise ValueError("Session is not active")
 
         session_update = SessionUpdate(
-            status=SessionStatus.COMPLETED
+            status=SessionStatus.COMPLETED,
+            ended_at=datetime.now(timezone.utc),
         )
 
         updated_session = await self.session_repo.update(
@@ -204,8 +195,6 @@ class SimulationService:
         )
 
         if updated_session is None:
-            raise ValueError(
-                "Failed to update session status to COMPLETED"
-            )
+            raise ValueError("Failed to update session status to COMPLETED")
 
         return updated_session

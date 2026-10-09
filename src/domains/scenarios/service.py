@@ -1,10 +1,35 @@
 import uuid
 from typing import Sequence
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.domains.scenarios.models import Scenario, CustomerPersona, DifficultyLevel
-from src.domains.scenarios.schemas import ScenarioCreate
+
+from src.core.training import (
+    CATEGORY_INFO,
+    TrainingCategory,
+    category_name,
+    dimension_name,
+)
+from src.domains.evaluations.models import EvaluationResult
 from src.domains.scenarios.crud import CRUDScenario
+from src.domains.scenarios.defaults import DEFAULT_SCENARIOS
+from src.domains.scenarios.models import DifficultyLevel, Scenario
+from src.domains.scenarios.schemas import (
+    CategoryRef,
+    CategoryResponse,
+    CustomerProfile,
+    ScenarioBrief,
+    ScenarioProgress,
+    ScenarioSummary,
+    SkillRef,
+)
+from src.domains.simulations.models import Session, SessionStatus
+
+_DIFFICULTY_ORDER = {
+    DifficultyLevel.BEGINNER: 0,
+    DifficultyLevel.INTERMEDIATE: 1,
+    DifficultyLevel.ADVANCED: 2,
+}
 
 
 class ScenarioService:
@@ -17,107 +42,155 @@ class ScenarioService:
         return await self.repository.get(db=db, id=scenario_id, tenant_id=tenant_id)
 
     async def list_all_scenarios(
-        self, db: AsyncSession, tenant_id: uuid.UUID
+        self,
+        db: AsyncSession,
+        tenant_id: uuid.UUID,
+        category: TrainingCategory | None = None,
+        difficulty: DifficultyLevel | None = None,
     ) -> Sequence[Scenario]:
-        return await self.repository.get_multi(db=db, tenant_id=tenant_id)
+        query = select(Scenario).where(Scenario.tenant_id == tenant_id)
+        if category is not None:
+            query = query.where(Scenario.category == category.value)
+        if difficulty is not None:
+            query = query.where(Scenario.difficulty == difficulty)
+        scenarios = (await db.execute(query)).scalars().all()
+        # Category, then Beginner -> Advanced, then name
+        return sorted(
+            scenarios,
+            key=lambda s: (
+                s.category or "~",
+                _DIFFICULTY_ORDER.get(s.difficulty, 9),
+                s.name,
+            ),
+        )
+
+    async def list_categories(
+        self, db: AsyncSession, tenant_id: uuid.UUID
+    ) -> list[CategoryResponse]:
+        result = await db.execute(
+            select(Scenario.category, func.count(Scenario.id))
+            .where(Scenario.tenant_id == tenant_id)
+            .group_by(Scenario.category)
+        )
+        counts = {category: count for category, count in result.all()}
+        return [
+            CategoryResponse(
+                id=category,
+                name=name,
+                description=description,
+                scenario_count=counts.get(category.value, 0),
+            )
+            for category, (name, description) in CATEGORY_INFO.items()
+        ]
+
+    async def user_progress(
+        self, db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID
+    ) -> dict[uuid.UUID, ScenarioProgress]:
+        """The user's attempts / scores per scenario, from their sessions."""
+        result = await db.execute(
+            select(
+                Session.scenario_id,
+                Session.status,
+                EvaluationResult.overall_score,
+            )
+            .outerjoin(EvaluationResult, EvaluationResult.session_id == Session.id)
+            .where(Session.tenant_id == tenant_id, Session.user_id == user_id)
+            .order_by(Session.created_at)
+        )
+
+        progress: dict[uuid.UUID, ScenarioProgress] = {}
+        for scenario_id, status, score in result.all():
+            entry = progress.setdefault(
+                scenario_id,
+                ScenarioProgress(
+                    status="new", attempts=0, best_score=None, last_score=None
+                ),
+            )
+            entry.attempts += 1
+            if status == SessionStatus.IN_PROGRESS:
+                entry.status = "in_progress"
+            if score is not None:
+                entry.last_score = score
+                entry.best_score = max(entry.best_score or 0, score)
+                if entry.status == "new":
+                    entry.status = "completed"
+        return progress
+
+    @staticmethod
+    def to_summary(
+        scenario: Scenario, progress: ScenarioProgress | None
+    ) -> ScenarioSummary:
+        return ScenarioSummary(**_summary_fields(scenario, progress))
+
+    @staticmethod
+    def to_brief(
+        scenario: Scenario, progress: ScenarioProgress | None
+    ) -> ScenarioBrief:
+        return ScenarioBrief(
+            **_summary_fields(scenario, progress),
+            customer=CustomerProfile(
+                name=scenario.customer_name,
+                personality=scenario.customer_personality,
+                emotion=scenario.customer_emotion,
+                background=scenario.customer_background,
+            ),
+            situation=scenario.situation,
+            customer_goal=scenario.customer_goal,
+            trainee_objective=scenario.trainee_objective,
+            important_information=scenario.important_information or [],
+        )
 
     async def seed_defaults(
         self, db: AsyncSession, tenant_id: uuid.UUID
     ) -> Sequence[Scenario]:
-        existing = await self.list_all_scenarios(db, tenant_id)
-        if existing:
-            return existing
+        """
+        Make sure the organization has the starter scenarios.
 
-        scenarios_to_create = [
-            ScenarioCreate(
-                name="SaaS Subscription Cancellation",
-                description="A polite customer wants to cancel their SaaS subscription after finding a cheaper competitor.",
-                persona=CustomerPersona.FRIENDLY,
-                difficulty=DifficultyLevel.BEGINNER,
-                system_prompt=(
-                    "You are a friendly, polite customer named Alex who is calling to cancel your SaaS "
-                    "project-management subscription. You recently discovered a competing product that costs "
-                    "30% less and covers the core features you actually use. You are not unhappy with the "
-                    "product itself — it works fine — you are simply being budget-conscious.\n\n"
-                    "Behaviour guidelines:\n"
-                    "- Start the conversation calmly: explain you want to cancel and briefly mention the "
-                    "cheaper alternative.\n"
-                    "- If the support agent offers a meaningful retention incentive (e.g. a discount of "
-                    "20% or more, or a free month), respond with genuine interest and be open to staying.\n"
-                    "- If no incentive is offered and the agent simply processes the cancellation "
-                    "professionally, accept it gracefully and thank them.\n"
-                    "- If the agent is dismissive, argues that the competitor is inferior without asking "
-                    "about your needs, or makes you feel unvalued, become slightly cooler in tone and "
-                    "firmly confirm the cancellation.\n"
-                    "- Never be rude. Keep all responses concise (2-4 sentences).\n\n"
-                    "Resolution criteria: The trainee succeeds by either retaining you with a compelling "
-                    "offer or completing a smooth, empathetic cancellation that leaves you feeling respected."
-                ),
-            ),
-            ScenarioCreate(
-                name="Late Delivery Complaint",
-                description="A frustrated customer's birthday gift arrived 3 days late, after the occasion had passed.",
-                persona=CustomerPersona.FRUSTRATED,
-                difficulty=DifficultyLevel.INTERMEDIATE,
-                system_prompt=(
-                    "You are a frustrated customer named Jordan. You ordered a gift for your mother's "
-                    "birthday two weeks in advance, but it arrived three days late — after her birthday "
-                    "had already passed. You are disappointed and feel let down, but you are not "
-                    "irrational. You just want to be heard, get a clear explanation, and receive some "
-                    "form of acknowledgement or compensation.\n\n"
-                    "Behaviour guidelines:\n"
-                    "- Open with a firm but controlled complaint: state the facts (late delivery, missed "
-                    "occasion) and express your disappointment clearly.\n"
-                    "- If the agent listens actively, apologises sincerely, explains what went wrong, and "
-                    "offers a concrete remedy (e.g. partial refund, voucher, expedited future shipping), "
-                    "de-escalate and become cooperative.\n"
-                    "- If the agent deflects ('That's the courier's fault'), gives a scripted non-apology, "
-                    "or offers nothing concrete, escalate your frustration — raise your voice in text "
-                    "(use CAPS sparingly), threaten to post a review.\n"
-                    "- If escalated and still no empathy/action after two more turns, say you are "
-                    "escalating to a manager and end the call.\n"
-                    "- Keep responses 2-5 sentences.\n\n"
-                    "Resolution criteria: The trainee succeeds by acknowledging the impact on the "
-                    "occasion, providing a clear status/explanation, and offering at least one concrete "
-                    "remedy before the customer escalates."
-                ),
-            ),
-            ScenarioCreate(
-                name="Double Billing Dispute",
-                description="An angry customer was charged twice for the same billing cycle and has already tried email support with no resolution.",
-                persona=CustomerPersona.ANGRY,
-                difficulty=DifficultyLevel.ADVANCED,
-                system_prompt=(
-                    "You are an angry customer named Morgan. Your credit card was charged twice for your "
-                    "monthly subscription — you can see both charges on your bank statement. You sent an "
-                    "email to support five days ago and received an automated reply but nothing since. "
-                    "This is your second attempt to resolve it and you are furious. You are seriously "
-                    "considering filing a chargeback with your bank and posting about this publicly.\n\n"
-                    "Behaviour guidelines:\n"
-                    "- Open the conversation already angry: state the double charge, the ignored email, "
-                    "and that you are close to initiating a chargeback.\n"
-                    "- Only the following will calm you down: (1) the agent explicitly acknowledges the "
-                    "error and apologises without excuses, AND (2) commits to an immediate refund with a "
-                    "specific timeframe (e.g. '3-5 business days'), AND (3) gives a brief explanation of "
-                    "what likely caused the duplicate charge.\n"
-                    "- If the agent asks you to wait again, says they need to 'investigate', or offers "
-                    "account credit instead of a cash refund, escalate further — become more aggressive, "
-                    "use short clipped sentences, repeat the threat of chargeback and a social-media post.\n"
-                    "- If the agent tries to gaslight you (deny the double charge) or reads from a "
-                    "script without engaging with the specifics, state clearly that you are ending the "
-                    "call and going straight to your bank.\n"
-                    "- Keep responses 2-5 sentences; use terse, clipped language when angry.\n\n"
-                    "Resolution criteria: The trainee succeeds only if all three calming conditions are "
-                    "met within 6 conversation turns. Partial credit for 2 of 3."
-                ),
-            ),
-        ]
-
-        created = []
-        for s_in in scenarios_to_create:
-            s_obj = await self.repository.create(
-                db=db, obj_in=s_in, tenant_id=tenant_id
+        Creates any that are missing (matched by name) and fills in fields that
+        are still empty on existing ones — never overwrites edited content.
+        """
+        for default in DEFAULT_SCENARIOS:
+            existing = await self.repository.get_by_name(
+                db=db, tenant_id=tenant_id, name=default.name
             )
-            created.append(s_obj)
+            if existing is None:
+                await self.repository.create(db=db, obj_in=default, tenant_id=tenant_id)
+                continue
 
-        return created
+            changed = False
+            for field, value in default.model_dump().items():
+                if getattr(existing, field) in (None, "", []) and value not in (
+                    None,
+                    "",
+                    [],
+                ):
+                    setattr(existing, field, value)
+                    changed = True
+            if changed:
+                db.add(existing)
+                await db.commit()
+
+        return await self.list_all_scenarios(db, tenant_id)
+
+
+def _summary_fields(scenario: Scenario, progress: ScenarioProgress | None) -> dict:
+    category = (
+        CategoryRef(id=scenario.category, name=category_name(scenario.category))
+        if scenario.category
+        else None
+    )
+    return {
+        "id": scenario.id,
+        "name": scenario.name,
+        "description": scenario.description,
+        "category": category,
+        "difficulty": scenario.difficulty,
+        "persona": scenario.persona,
+        "skills": [
+            SkillRef(id=skill, name=dimension_name(skill))
+            for skill in scenario.skills or []
+        ],
+        "estimated_minutes": scenario.estimated_minutes,
+        "progress": progress
+        or ScenarioProgress(status="new", attempts=0, best_score=None, last_score=None),
+    }

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Integer, ForeignKey
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,8 +17,22 @@ class EvaluationResult(TenantAwareBase):
         unique=True,
         index=True,
     )
-    overall_score: Mapped[int] = mapped_column(Integer, nullable=True)  # Could be 0-100
+    overall_score: Mapped[int] = mapped_column(Integer, nullable=True)  # 0-100
     summary: Mapped[str] = mapped_column(Text, nullable=True)
+    # Feedback lists (strings): what went well, what went poorly, what the trainee
+    # could have done, and concrete suggestions for next time.
+    strengths: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    improvements: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    missed_opportunities: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    recommendations: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
 
     session: Mapped[Session] = relationship()
     dimension_scores: Mapped[list["DimensionScore"]] = relationship(
@@ -36,8 +50,12 @@ class DimensionScore(Base):
         nullable=False,
         index=True,
     )
+    # SkillDimension value (e.g. "de_escalation"); null for pre-0-100 evaluations
+    dimension_key: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, index=True
+    )
     dimension_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-100
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
 
     evaluation: Mapped[EvaluationResult] = relationship(

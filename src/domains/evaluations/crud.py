@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from src.core.training import SkillDimension
 from src.core.base_crud import CRUDBase, CRUDBaseRoot
 from src.domains.evaluations.models import EvaluationResult, DimensionScore, RedFlag
 from src.domains.evaluations.schemas import (
@@ -42,7 +43,14 @@ class CRUDEvaluationResult(
             )
         )
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        evaluation = result.scalar_one_or_none()
+        if evaluation is not None:
+            # Always return dimensions in the catalog's fixed order
+            order = {d.value: i for i, d in enumerate(SkillDimension)}
+            evaluation.dimension_scores.sort(
+                key=lambda d: order.get(d.dimension_key or "", len(order))
+            )
+        return evaluation
 
 
 class CRUDDimensionScore(CRUDBaseRoot[DimensionScore, DimensionScoreCreate, DimensionScoreUpdate]):
