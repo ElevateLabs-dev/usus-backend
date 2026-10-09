@@ -13,9 +13,12 @@ services:
     region: frankfurt # closest Render region to Neon eu-west-2 (London)
     plan: free # free instances sleep after 15 min idle; upgrade for production
     healthCheckPath: /health
-    # Apply database migrations (Neon) before each new version goes live.
-    preDeployCommand: alembic upgrade head
+    # The free plan has no pre-deploy command, so the container applies
+    # database migrations (Neon) on start instead. On a paid plan you can
+    # replace this with `preDeployCommand: alembic upgrade head`.
     envVars:
+      - key: RUN_MIGRATIONS
+        value: "true"
       - key: ENVIRONMENT
         value: production
       - key: SECRET_KEY
