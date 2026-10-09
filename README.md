@@ -112,6 +112,10 @@ uv run seed-admin
 
 uv run seed-scenarios
 
+# Create an organization (tenant) + a user inside it + its default scenarios.
+# Users created this way sign in without needing a tenant ID.
+uv run seed-demo
+
 ```
 
 ### 6. Run the Application

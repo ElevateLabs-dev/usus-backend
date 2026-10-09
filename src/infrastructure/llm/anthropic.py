@@ -11,10 +11,12 @@ class AnthropicProvider(LLMProvider):
     Anthropic implementation of the LLMProvider using the official SDK.
     """
 
-    def __init__(self, model: str = "claude-haiku-4-5"):
-        self.model = model
-        # The AsyncAnthropic client will automatically use ANTHROPIC_API_KEY from environment
-        self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    def __init__(self, model: str | None = None):
+        self.model = model or settings.ANTHROPIC_MODEL
+        self.client = anthropic.AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+        )
 
     async def generate_response(
         self,
@@ -22,9 +24,13 @@ class AnthropicProvider(LLMProvider):
         messages: List[Dict[str, Any]],
         temperature: float = 0.7,
         max_tokens: int = 1024,
+        json_mode: bool = False,
     ) -> str:
         """
         Generate a response using Anthropic's Claude models.
+
+        json_mode is accepted for interface compatibility; JSON output is
+        enforced through the system prompt.
         """
         # Ensure messages conform to what Anthropic expects (user/assistant roles).
         # We might need to map 'model' to 'assistant' if our internal enum uses 'model'.

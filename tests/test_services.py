@@ -21,7 +21,7 @@ from src.domains.evaluations.crud import (
     CRUDDimensionScore,
     CRUDRedFlag,
 )
-from src.domains.evaluations.service import EvaluationService
+from src.domains.evaluations.service import EVALUATION_DIMENSIONS, EvaluationService
 
 # It is important to import all models so Base.metadata knows about them
 import src.domains.tenants.models
@@ -29,7 +29,7 @@ import src.domains.tenants.models
 
 class MockLLMProvider(LLMProvider):
     async def generate_response(
-        self, system_prompt, messages, temperature=0.7, max_tokens=1024
+        self, system_prompt, messages, temperature=0.7, max_tokens=1024, json_mode=False
     ):
         # Determine based on prompt if it's customer response or evaluation
         if "expert customer service evaluator" in system_prompt:
@@ -38,7 +38,8 @@ class MockLLMProvider(LLMProvider):
                     "overall_score": 90,
                     "summary": "Great job handling the customer.",
                     "dimensions": [
-                        {"name": "Empathy", "score": 9, "rationale": "Very empathetic"}
+                        {"name": name, "score": 9, "rationale": "Well handled"}
+                        for name in EVALUATION_DIMENSIONS
                     ],
                     "red_flags": [],
                 }
@@ -95,7 +96,6 @@ def simulation_service(scenario_service, evaluation_service):
         message_repo,
         scenario_service.repository,
         MockLLMProvider(),
-        evaluation_service,
     )
 
 
@@ -111,14 +111,18 @@ async def test_scenario_service_seed(db_session, scenario_service, tenant_id):
 
 @pytest.mark.asyncio
 async def test_full_simulation_loop(
-    db_session, scenario_service, simulation_service, tenant_id
+    db_session, scenario_service, simulation_service, evaluation_service, tenant_id
 ):
     scenarios = await scenario_service.seed_defaults(db_session, tenant_id)
     scenario_id = scenarios[0].id
 
     # Start Session
-    session = await simulation_service.start_session(db_session, tenant_id, scenario_id)
+    user_id = uuid.uuid4()
+    session = await simulation_service.start_session(
+        db_session, user_id=user_id, tenant_id=tenant_id, scenario_id=scenario_id
+    )
     assert session.status == SessionStatus.IN_PROGRESS
+    assert session.user_id == user_id
 
     # Send Message
     model_msg = await simulation_service.send_message(
@@ -127,11 +131,18 @@ async def test_full_simulation_loop(
     assert model_msg.role == MessageRole.MODEL
     assert model_msg.content == "I am a mock response from the customer."
 
-    # End Session
-    updated_session, eval_result = await simulation_service.end_session(
+    # End Session: marks it completed; evaluation runs separately (Celery task)
+    completed = await simulation_service.end_session(db_session, tenant_id, session.id)
+    assert completed.status == SessionStatus.COMPLETED
+
+    messages = await CRUDMessage(Message).get_by_session(
         db_session, tenant_id, session.id
     )
-
-    assert updated_session.status == SessionStatus.EVALUATED
+    eval_result = await evaluation_service.evaluate_session(
+        db=db_session,
+        tenant_id=tenant_id,
+        session=completed,
+        messages=[m for m in messages if m.role != MessageRole.SYSTEM],
+    )
     assert eval_result.overall_score == 90
     assert eval_result.summary == "Great job handling the customer."

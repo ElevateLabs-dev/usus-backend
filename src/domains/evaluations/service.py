@@ -322,7 +322,7 @@ Required format:
         messages=llm_messages,
         temperature=0.0,
         max_tokens=2000,
-        response_format="json",
+        json_mode=True,
                 )
             )
 

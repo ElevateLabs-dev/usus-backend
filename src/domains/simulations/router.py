@@ -37,14 +37,14 @@ from src.domains.simulations.schemas import (
 
 from src.domains.simulations.service import SimulationService
 
-from src.infrastructure.llm.ollama_provider import OllamaProvider
+from src.infrastructure.llm.factory import get_llm_provider
 
 
 # ---------------------------------------------------------------------------
 # Services
 # ---------------------------------------------------------------------------
 
-_llm = OllamaProvider()
+_llm = get_llm_provider()
 
 _simulation_service = SimulationService(
     session_repo=session_repo,

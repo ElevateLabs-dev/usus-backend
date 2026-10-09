@@ -21,7 +21,7 @@ from src.domains.simulations.models import (
     SessionStatus,
 )
 
-from src.infrastructure.llm.ollama_provider import OllamaProvider
+from src.infrastructure.llm.factory import get_llm_provider
 
 
 async def _generate_evaluation_report(
@@ -31,7 +31,7 @@ async def _generate_evaluation_report(
     session_id = uuid.UUID(simulation_id)
     tenant_uuid = uuid.UUID(tenant_id)
 
-    llm_provider = OllamaProvider()
+    llm_provider = get_llm_provider()
 
     evaluation_service = EvaluationService(
         eval_result_repo=eval_result_repo,
