@@ -66,3 +66,8 @@ Thumbs.db
 
 # PyCharm / IntelliJ
 .idea/
+
+# =========================
+# Editor workspace
+# =========================
+USUS-WORKSPACE.code-workspace

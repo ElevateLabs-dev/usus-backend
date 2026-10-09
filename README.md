@@ -141,6 +141,21 @@ uv run celery -A src.celery_app worker --loglevel=info
 
 ```
 
+## Deployment (Render + Neon + Upstash)
+
+- **Database:** [Neon](https://neon.tech) Postgres — paste its connection string into `DATABASE_URL` unchanged.
+- **Redis (Celery broker):** [Upstash](https://upstash.com) — `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` = `rediss://default:<token>@<host>.upstash.io:6379/0`.
+- **App:** [Render](https://render.com), built from the `Dockerfile` via the `render.yaml` Blueprint (Dashboard → New → Blueprint):
+  - `usus-api` — web service; runs `alembic upgrade head` before each deploy.
+  - `usus-worker` — background worker running the Celery evaluation tasks (Render has no free plan for workers).
+
+Locally you can use the same Neon (ideally a separate Neon *branch*) and Upstash URLs in `.env`, then run the API and the worker:
+
+```bash
+uv run fastapi dev src/main.py
+uv run celery -A src.celery_app worker --pool=solo --without-gossip --without-mingle --without-heartbeat --loglevel=info
+```
+
 ## Key Development Guidelines
 
 1. **Multi-Tenancy is Mandatory:** Every database model that belongs to a specific company must include a `tenant_id` foreign key. Always filter queries by `tenant_id` at the CRUD layer to prevent cross-tenant data leaks.
