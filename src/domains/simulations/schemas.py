@@ -2,7 +2,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from src.domains.simulations.models import SessionStatus, MessageRole
+from src.domains.simulations.models import (
+    MessageRole,
+    SessionStatus,
+)
+
+
+# ---------------------------------------------------------------------------
+# Session schemas
+# ---------------------------------------------------------------------------
 
 
 class SessionBase(BaseModel):
@@ -26,6 +34,11 @@ class SessionResponse(SessionBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ---------------------------------------------------------------------------
+# Message schemas
+# ---------------------------------------------------------------------------
+
+
 class MessageBase(BaseModel):
     session_id: UUID
     role: MessageRole
@@ -47,7 +60,9 @@ class MessageResponse(MessageBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# --- Request schemas ---
+# ---------------------------------------------------------------------------
+# Request schemas
+# ---------------------------------------------------------------------------
 
 
 class StartSessionRequest(BaseModel):
@@ -58,19 +73,11 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
-# --- Composite response schemas ---
+# ---------------------------------------------------------------------------
+# Response schemas
+# ---------------------------------------------------------------------------
 
 
 class SendMessageResponse(BaseModel):
     user_message: MessageResponse
     ai_reply: MessageResponse
-
-
-class EndSessionResponse(BaseModel):
-    session: SessionResponse
-    evaluation: "EvaluationResultDetailResponse"
-
-
-from src.domains.evaluations.schemas import EvaluationResultDetailResponse  # noqa: E402
-
-EndSessionResponse.model_rebuild()

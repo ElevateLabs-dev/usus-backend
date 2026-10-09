@@ -7,10 +7,10 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
 )
 
-# auto discover tasks.py files in each domain folder
+# Automatically discover tasks.py files in each domain.
 celery_app.autodiscover_tasks(
     [
-        "src.domains.evaluation",
+        "src.domains.evaluations",
         "src.domains.simulations",
     ]
 )
