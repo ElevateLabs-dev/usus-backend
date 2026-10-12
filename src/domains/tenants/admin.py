@@ -1,7 +1,4 @@
-from starlette.requests import Request
 from starlette_admin.contrib.sqla import ModelView
-
-from src.domains.tenants.models import Tenant
 
 
 class TenantAdminView(ModelView):

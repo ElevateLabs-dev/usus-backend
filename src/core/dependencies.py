@@ -6,8 +6,10 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.core.database import get_db
 
 ALGORITHM = "HS256"
 
@@ -21,6 +23,11 @@ class UserRole(str, Enum):
     TRAINEE = "trainee"
 
 
+# Imported here (not at the top): these modules import UserRole from this file.
+from src.domains.tenants.models import Tenant  # noqa: E402
+from src.domains.users.models import User  # noqa: E402
+
+
 @dataclass
 class AuthContext:
     user_id: UUID
@@ -29,16 +36,22 @@ class AuthContext:
     must_change_password: bool = False
 
 
-def get_auth_context_allow_password_change(
+async def get_auth_context_allow_password_change(
     token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> AuthContext:
     """
-    Decodes a Bearer JWT into an AuthContext WITHOUT enforcing the first-login
+    Decodes a Bearer JWT and loads the user, WITHOUT enforcing the first-login
     password change. Only for the endpoints a user needs while their temporary
     password is still active (change-password, /users/me).
 
-    Raises HTTP 401 if the token is missing, malformed, expired, or
-    does not contain the required claims.
+    The token only proves who the caller is. Their role, organization and
+    status are read from the database on every request, so deactivating a user
+    or organization — or changing a role — takes effect immediately.
+
+    Raises HTTP 401 if the token is missing, malformed or expired, or the user
+    no longer exists or is deactivated; HTTP 403 if their organization is
+    deactivated.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,24 +61,39 @@ def get_auth_context_allow_password_change(
 
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        user_id_raw: str | None = payload.get("user_id")
-        tenant_id_raw: str | None = payload.get("tenant_id")  # may be absent
-        role_raw: str | None = payload.get("role")
+        user_id = UUID(payload.get("user_id") or "")
+        tenant_claim: str | None = payload.get("tenant_id")  # may be absent
+    except (JWTError, ValueError):
+        raise credentials_exception
 
-        if not user_id_raw or not role_raw:
-            raise credentials_exception
-    except JWTError:
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
         raise credentials_exception
 
     try:
-        return AuthContext(
-            user_id=UUID(user_id_raw),
-            tenant_id=UUID(tenant_id_raw) if tenant_id_raw else None,
-            role=UserRole(role_raw),
-            must_change_password=bool(payload.get("pwd_change", False)),
-        )
-    except (ValueError, KeyError):
+        role = UserRole(user.role)
+        # Platform admins belong to no organization; their token may name the
+        # one they are acting in. Everyone else uses their own organization.
+        tenant_id = user.tenant_id
+        if tenant_id is None and role == UserRole.PLATFORM_ADMIN and tenant_claim:
+            tenant_id = UUID(tenant_claim)
+    except ValueError:
         raise credentials_exception
+
+    if tenant_id is not None and role != UserRole.PLATFORM_ADMIN:
+        tenant = await db.get(Tenant, tenant_id)
+        if tenant is not None and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your organization has been deactivated",
+            )
+
+    return AuthContext(
+        user_id=user.id,
+        tenant_id=tenant_id,
+        role=role,
+        must_change_password=user.must_change_password,
+    )
 
 
 def get_auth_context(

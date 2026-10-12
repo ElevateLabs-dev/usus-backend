@@ -41,11 +41,34 @@ async def list_tenant_users(
     return result.scalars().all()
 
 
+async def has_other_active_admin(db: AsyncSession, user: User) -> bool:
+    """Whether the user's organization has another active company admin."""
+    result = await db.execute(
+        select(func.count(User.id)).where(
+            User.tenant_id == user.tenant_id,
+            User.role == UserRole.COMPANY_ADMIN.value,
+            User.is_active.is_(True),
+            User.id != user.id,
+        )
+    )
+    return result.scalar_one() > 0
+
+
 async def add_trainees(
     db: AsyncSession, tenant_id: uuid.UUID, entries: Sequence[TraineeCreate]
 ) -> tuple[list[User], list[SkippedTrainee]]:
+    """Create trainee accounts for an organization (see add_users)."""
+    return await add_users(db, tenant_id, entries, UserRole.TRAINEE)
+
+
+async def add_users(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    entries: Sequence[TraineeCreate],
+    role: UserRole,
+) -> tuple[list[User], list[SkippedTrainee]]:
     """
-    Create trainee accounts for an organization in one transaction.
+    Create accounts with the given role for an organization in one transaction.
 
     Accounts start locked (no usable password); send_invites() sets a temporary
     password and emails it. Emails already registered, or repeated within the
@@ -80,7 +103,7 @@ async def add_trainees(
             email=email,
             full_name=(entry.full_name or "").strip() or None,
             hashed_password=UNUSABLE_PASSWORD,
-            role=UserRole.TRAINEE.value,
+            role=role.value,
             tenant_id=tenant_id,
             is_active=True,
             must_change_password=True,
