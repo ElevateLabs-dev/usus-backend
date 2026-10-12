@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -112,3 +113,57 @@ class InviteResendResponse(BaseModel):
         description="Always 'sending'; the email goes out in the background"
     )
     email: EmailStr
+
+
+# ---------------------------------------------------------------------------
+# Managing an organization's users
+# ---------------------------------------------------------------------------
+
+
+class OrgRole(str, Enum):
+    """Roles a user can have inside an organization."""
+
+    TRAINEE = "trainee"
+    MANAGER = "manager"
+    COMPANY_ADMIN = "company_admin"
+
+
+class UserInvite(BaseModel):
+    email: EmailStr = Field(description="Stored lower-case")
+    full_name: str | None = Field(default=None, max_length=255)
+    role: OrgRole = Field(
+        default=OrgRole.TRAINEE,
+        description="Managers may only invite trainees; company admins may invite "
+        "any of the three roles",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "email": "team.lead@acme.com",
+                "full_name": "Tunde Bello",
+                "role": "manager",
+            }
+        }
+    }
+
+
+class OrgUserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=255)
+    role: OrgRole | None = Field(
+        default=None, description="Company admins only. You cannot change your own."
+    )
+    is_active: bool | None = Field(
+        default=None,
+        description="false deactivates the user immediately (they can no longer "
+        "sign in or use the API); true restores access. You cannot deactivate "
+        "yourself.",
+    )
+
+    model_config = {"json_schema_extra": {"example": {"is_active": False}}}
+
+
+class ProfileUpdate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+
+    model_config = {"json_schema_extra": {"example": {"full_name": "Jane Doe"}}}

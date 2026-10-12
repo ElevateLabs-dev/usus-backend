@@ -138,13 +138,9 @@ class UserAdminView(ModelView):
 
     column_searchable_list = ["email"]
 
-    exclude_fields_from_create = [
-        "hashed_password"
-    ]
+    exclude_fields_from_create = ["hashed_password"]
 
-    exclude_fields_from_edit = [
-        "hashed_password"
-    ]
+    exclude_fields_from_edit = ["hashed_password"]
 
     # Custom actions displayed on each row
     row_actions = [
@@ -221,32 +217,22 @@ class UserAdminView(ModelView):
         )
 
         if not isinstance(new_password, str):
-            raise ActionFailed(
-                "Invalid password."
-            )
+            raise ActionFailed("Invalid password.")
 
         if not isinstance(
             confirm_password,
             str,
         ):
-            raise ActionFailed(
-                "Invalid password confirmation."
-            )
+            raise ActionFailed("Invalid password confirmation.")
 
         if not new_password:
-            raise ActionFailed(
-                "Password cannot be empty."
-            )
+            raise ActionFailed("Password cannot be empty.")
 
         if new_password != confirm_password:
-            raise ActionFailed(
-                "Passwords do not match."
-            )
+            raise ActionFailed("Passwords do not match.")
 
         if len(new_password) < 8:
-            raise ActionFailed(
-                "Password must be at least 8 characters."
-            )
+            raise ActionFailed("Password must be at least 8 characters.")
 
         session = request.state.session
 
@@ -256,13 +242,9 @@ class UserAdminView(ModelView):
         )
 
         if user is None:
-            raise ActionFailed(
-                "User not found."
-            )
+            raise ActionFailed("User not found.")
 
-        user.hashed_password = hash_password(
-            new_password
-        )
+        user.hashed_password = hash_password(new_password)
 
         await session.commit()
 
