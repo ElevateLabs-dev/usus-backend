@@ -19,8 +19,10 @@ from src.domains.scenarios.schemas import (
     CategoryResponse,
     CustomerProfile,
     ScenarioBrief,
+    ScenarioPatch,
     ScenarioProgress,
     ScenarioSummary,
+    ScenarioWrite,
     SkillRef,
 )
 from src.domains.simulations.models import Session, SessionStatus
@@ -30,6 +32,22 @@ _DIFFICULTY_ORDER = {
     DifficultyLevel.INTERMEDIATE: 1,
     DifficultyLevel.ADVANCED: 2,
 }
+
+
+_REQUIRED_FIELDS = {
+    "name",
+    "description",
+    "difficulty",
+    "persona",
+    "skills",
+    "estimated_minutes",
+    "important_information",
+    "is_archived",
+}
+
+
+class ScenarioNameTakenError(Exception):
+    """The organization already has a scenario with this name."""
 
 
 class ScenarioService:
@@ -47,8 +65,11 @@ class ScenarioService:
         tenant_id: uuid.UUID,
         category: TrainingCategory | None = None,
         difficulty: DifficultyLevel | None = None,
+        include_archived: bool = False,
     ) -> Sequence[Scenario]:
         query = select(Scenario).where(Scenario.tenant_id == tenant_id)
+        if not include_archived:
+            query = query.where(Scenario.is_archived.is_(False))
         if category is not None:
             query = query.where(Scenario.category == category.value)
         if difficulty is not None:
@@ -69,7 +90,7 @@ class ScenarioService:
     ) -> list[CategoryResponse]:
         result = await db.execute(
             select(Scenario.category, func.count(Scenario.id))
-            .where(Scenario.tenant_id == tenant_id)
+            .where(Scenario.tenant_id == tenant_id, Scenario.is_archived.is_(False))
             .group_by(Scenario.category)
         )
         counts = {category: count for category, count in result.all()}
@@ -140,6 +161,43 @@ class ScenarioService:
             important_information=scenario.important_information or [],
         )
 
+    async def create_scenario(
+        self, db: AsyncSession, tenant_id: uuid.UUID, data: ScenarioWrite
+    ) -> Scenario:
+        """Raises ScenarioNameTakenError if the organization already has the name."""
+        if await self.repository.get_by_name(db, tenant_id, data.name.strip()):
+            raise ScenarioNameTakenError(data.name)
+        scenario = Scenario(
+            **{**data.model_dump(), "name": data.name.strip()}, tenant_id=tenant_id
+        )
+        db.add(scenario)
+        await db.commit()
+        await db.refresh(scenario)
+        return scenario
+
+    async def update_scenario(
+        self, db: AsyncSession, scenario: Scenario, data: ScenarioPatch
+    ) -> Scenario:
+        """Apply only the fields that were sent."""
+        # An explicit null clears optional text fields but is ignored for
+        # fields the database requires.
+        changes = {
+            field: value
+            for field, value in data.model_dump(exclude_unset=True).items()
+            if value is not None or field not in _REQUIRED_FIELDS
+        }
+        new_name = (changes.get("name") or "").strip()
+        if new_name and new_name != scenario.name:
+            if await self.repository.get_by_name(db, scenario.tenant_id, new_name):
+                raise ScenarioNameTakenError(new_name)
+            changes["name"] = new_name
+        for field, value in changes.items():
+            setattr(scenario, field, value)
+        db.add(scenario)
+        await db.commit()
+        await db.refresh(scenario)
+        return scenario
+
     async def seed_defaults(
         self, db: AsyncSession, tenant_id: uuid.UUID
     ) -> Sequence[Scenario]:
@@ -156,6 +214,8 @@ class ScenarioService:
             if existing is None:
                 await self.repository.create(db=db, obj_in=default, tenant_id=tenant_id)
                 continue
+            if existing.is_archived:
+                continue  # the organization retired this one; leave it alone
 
             changed = False
             for field, value in default.model_dump().items():
