@@ -39,7 +39,10 @@ from src.domains.users.schemas import (
     ErrorResponse,
     InviteResendResponse,
     OrgUserRead,
+    OrgUserUpdate,
+    ProfileUpdate,
     TraineeCreate,
+    UserInvite,
 )
 
 # Session factory used by the background invite task (swapped out in tests).
@@ -94,6 +97,30 @@ def _schedule_invites(background_tasks: BackgroundTasks, user_ids: list[UUID]) -
         background_tasks.add_task(service.send_invites, user_ids, _session_factory)
 
 
+def _can_manage(ctx: AuthContext, target_role: str) -> bool:
+    """Company (and platform) admins manage every organization role; managers
+    only manage trainees. Platform admins are never managed here."""
+    if target_role == UserRole.PLATFORM_ADMIN.value:
+        return False
+    if ctx.role in (UserRole.COMPANY_ADMIN, UserRole.PLATFORM_ADMIN):
+        return True
+    return target_role == UserRole.TRAINEE.value
+
+
+async def _managed_user(db: AsyncSession, ctx: AuthContext, user_id: UUID):
+    """A user in the caller's organization that the caller may manage (or 404)."""
+    user = await user_repo.get(db, id=user_id)
+    if (
+        user is None
+        or user.tenant_id != _tenant_of(ctx)
+        or not _can_manage(ctx, user.role)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
+
+
 @router.get(
     "/me",
     response_model=OrgUserRead,
@@ -137,6 +164,77 @@ async def list_users(
     ] = None,
 ):
     return await service.list_tenant_users(db, _tenant_of(ctx), role)
+
+
+@router.patch(
+    "/me",
+    response_model=OrgUserRead,
+    summary="Update your profile",
+    description="Change your own display name.",
+    responses={401: _STAFF_ERRORS[401]},
+)
+async def update_me(
+    body: ProfileUpdate,
+    ctx: Annotated[AuthContext, Depends(get_auth_context_allow_password_change)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    user = await user_repo.get(db, id=ctx.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    user.full_name = body.full_name.strip()
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.post(
+    "/",
+    response_model=OrgUserRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Invite a user (trainee, manager or company admin)",
+    description=(
+        "Creates a user in your organization with the given role and emails them "
+        "a temporary password; they must change it on first sign-in.\n\n"
+        "- **Company admins** can invite trainees, managers and other company "
+        "admins.\n"
+        "- **Managers** can only invite trainees.\n\n"
+        "For many trainees at once use `/users/trainees/bulk` or "
+        "`/users/trainees/import`."
+    ),
+    responses={
+        **_STAFF_ERRORS,
+        409: _error("The email is already registered", "Email already registered"),
+    },
+)
+async def invite_user(
+    body: UserInvite,
+    ctx: _OrgStaff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    tenant_id = _tenant_of(ctx)
+    if not _can_manage(ctx, body.role.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Managers can only invite trainees",
+        )
+
+    created, skipped = await service.add_users(
+        db,
+        tenant_id,
+        [TraineeCreate(email=body.email, full_name=body.full_name)],
+        UserRole(body.role.value),
+    )
+    if not created:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=skipped[0].reason
+        )
+
+    _schedule_invites(background_tasks, [created[0].id])
+    return created[0]
 
 
 @router.post(
@@ -275,20 +373,18 @@ async def import_trainees(
     "/{user_id}/resend-invite",
     response_model=InviteResendResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Resend a trainee's invite (or reset their password)",
+    summary="Resend a user's invite (or reset their password)",
     description=(
         "**Company admin / manager only.** Generates a new temporary password, "
-        "emails it, and requires the trainee to change it at next sign-in. Any "
+        "emails it, and requires the user to change it at next sign-in. Any "
         "previous password stops working.\n\n"
-        "Use it when an invite email failed (`invite_sent_at` is null) or a "
-        "trainee forgot their password. Only works for trainees in your "
-        "organization."
+        "Use it when an invite email failed (`invite_sent_at` is null) or someone "
+        "forgot their password. Managers can do this for trainees; company "
+        "admins for anyone in the organization."
     ),
     responses={
         **_STAFF_ERRORS,
-        404: _error(
-            "No trainee with this ID in your organization", "Trainee not found"
-        ),
+        404: _error("No such user that you can manage", "User not found"),
     },
 )
 async def resend_invite(
@@ -297,15 +393,87 @@ async def resend_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
 ):
-    user = await user_repo.get(db, id=user_id)
-    if (
-        user is None
-        or user.tenant_id != _tenant_of(ctx)
-        or user.role != UserRole.TRAINEE.value
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Trainee not found"
-        )
+    user = await _managed_user(db, ctx, user_id)
 
     _schedule_invites(background_tasks, [user.id])
     return InviteResendResponse(status="sending", email=user.email)
+
+
+@router.patch(
+    "/{user_id}",
+    response_model=OrgUserRead,
+    summary="Edit, deactivate or change the role of a user",
+    description=(
+        "Send only the fields you want to change.\n\n"
+        "- **Company admins** can edit anyone in their organization, including "
+        "changing roles.\n"
+        "- **Managers** can edit and deactivate trainees, but cannot change "
+        "roles.\n\n"
+        "Deactivating takes effect immediately and keeps all of the user's "
+        "training history. You cannot deactivate yourself, change your own role, "
+        "or remove an organization's last active company admin."
+    ),
+    responses={
+        **_STAFF_ERRORS,
+        400: _error(
+            "Trying to deactivate yourself or change your own role",
+            "You cannot deactivate yourself",
+        ),
+        404: _error("No such user that you can manage", "User not found"),
+        409: _error(
+            "Would leave the organization without an active company admin",
+            "An organization needs at least one active company admin",
+        ),
+    },
+)
+async def update_user(
+    user_id: UUID,
+    body: OrgUserUpdate,
+    ctx: _OrgStaff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    user = await _managed_user(db, ctx, user_id)
+    changes = body.model_dump(exclude_unset=True)
+    new_role = changes.get("role")
+    deactivating = changes.get("is_active") is False
+
+    if user.id == ctx.user_id:
+        if deactivating:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot deactivate yourself",
+            )
+        if new_role is not None and new_role.value != user.role:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot change your own role",
+            )
+
+    if new_role is not None and new_role.value != user.role:
+        if ctx.role == UserRole.MANAGER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Managers cannot change roles",
+            )
+
+    losing_admin = user.role == UserRole.COMPANY_ADMIN.value and (
+        deactivating
+        or (new_role is not None and new_role.value != UserRole.COMPANY_ADMIN.value)
+    )
+    if losing_admin and not await service.has_other_active_admin(db, user):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An organization needs at least one active company admin",
+        )
+
+    if "full_name" in changes:
+        user.full_name = (changes["full_name"] or "").strip() or None
+    if new_role is not None:
+        user.role = new_role.value
+    if changes.get("is_active") is not None:
+        user.is_active = changes["is_active"]
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user

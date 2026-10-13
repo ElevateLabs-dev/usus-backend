@@ -24,6 +24,7 @@ from src.core.dependencies import (
     get_auth_context_allow_password_change,
 )
 from src.core.security import MIN_PASSWORD_LENGTH, hash_password, verify_password
+from src.domains.tenants.models import Tenant
 from src.domains.users import crud as users_crud
 from src.domains.users.models import User
 
@@ -110,6 +111,14 @@ async def issue_token(
         raise invalid
     if not verify_password(form.password, user.hashed_password):
         raise invalid
+
+    if user.tenant_id is not None:
+        tenant = await db.get(Tenant, user.tenant_id)
+        if tenant is not None and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your organization has been deactivated",
+            )
 
     # Platform admins can optionally receive a tenant-scoped token.
     effective_tenant_id = user.tenant_id

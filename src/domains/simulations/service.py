@@ -49,7 +49,7 @@ class SimulationService:
             tenant_id=tenant_id,
         )
 
-        if not scenario:
+        if not scenario or scenario.is_archived:
             raise ValueError("Scenario not found")
 
         session_in = SessionCreate(

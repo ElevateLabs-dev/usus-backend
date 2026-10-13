@@ -8,6 +8,7 @@ from src.domains.evaluations.router import router as evaluations_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
 from src.domains.simulations.router import router as simulations_router
+from src.domains.tenants.router import router as organizations_router
 from src.domains.users.router import router as users_router
 
 API_DESCRIPTION = """
@@ -28,6 +29,10 @@ required**.
 
 OPENAPI_TAGS = [
     {"name": "Auth", "description": "Sign in and change password."},
+    {
+        "name": "Organizations",
+        "description": "Platform admins onboard and manage client organizations.",
+    },
     {
         "name": "Users & Trainees",
         "description": "Your profile, and how organizations add and manage trainees.",
@@ -61,6 +66,7 @@ def create_app() -> FastAPI:
 
     # Register domain routers
     app.include_router(auth_router)
+    app.include_router(organizations_router)
     app.include_router(users_router)
     app.include_router(simulations_router)
     app.include_router(evaluations_router)

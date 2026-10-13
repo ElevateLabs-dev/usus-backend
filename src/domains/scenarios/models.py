@@ -1,7 +1,7 @@
 import enum
 from typing import Optional
 
-from sqlalchemy import JSON, Enum, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Enum, Integer, String, Text, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.base_model import TenantAwareBase
@@ -30,6 +30,12 @@ class Scenario(TenantAwareBase):
     )
     difficulty: Mapped[DifficultyLevel] = mapped_column(
         Enum(DifficultyLevel, name="difficulty_level_enum"), nullable=False
+    )
+
+    # Archived scenarios are hidden from trainees but kept, so past sessions
+    # and scores still have their scenario.
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false(), index=True
     )
 
     # --- Organization (see src/core/training.py) ---

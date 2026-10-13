@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -105,6 +106,135 @@ class ScenarioBrief(ScenarioSummary):
     important_information: list[ImportantInformation] = Field(
         description="Policies and facts the trainee may use"
     )
+
+
+# ---------------------------------------------------------------------------
+# Managing scenarios (company admins / managers) — includes the hidden fields
+# ---------------------------------------------------------------------------
+
+
+class ScenarioWrite(BaseModel):
+    """Create a scenario. The AI customer is built from these fields."""
+
+    name: str = Field(min_length=3, max_length=255)
+    description: str = Field(min_length=10, description="One or two sentences")
+    category: TrainingCategory
+    difficulty: DifficultyLevel
+    persona: CustomerPersona = Field(description="The customer's overall mood")
+    skills: list[SkillDimension] = Field(
+        default=[], max_length=7, description="Skills this scenario tests"
+    )
+    estimated_minutes: int = Field(default=10, ge=1, le=120)
+
+    customer_name: Optional[str] = Field(default=None, max_length=255)
+    customer_personality: Optional[str] = Field(default=None, max_length=255)
+    customer_emotion: Optional[str] = Field(default=None, max_length=255)
+    customer_background: Optional[str] = None
+    situation: str = Field(min_length=10, description="What happened")
+    customer_goal: Optional[str] = Field(
+        default=None, description="What the customer wants"
+    )
+    trainee_objective: str = Field(
+        min_length=10, description="What the trainee must do"
+    )
+    important_information: list[ImportantInformation] = Field(
+        default=[], description="Policies and facts the trainee may use"
+    )
+
+    escalation_behavior: Optional[str] = Field(
+        default=None,
+        description="Hidden from trainees: how the customer reacts to poor handling",
+    )
+    success_criteria: Optional[str] = Field(
+        default=None,
+        description="Hidden from trainees: what good handling looks like "
+        "(used by the evaluator)",
+    )
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Hidden from trainees: optional hand-written AI customer "
+        "instructions. Leave empty to build them from the fields above.",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Failed Payment at Checkout",
+                "description": "A customer's card was declined twice but their "
+                "bank shows a pending charge.",
+                "category": "problem_resolution",
+                "difficulty": "intermediate",
+                "persona": "frustrated",
+                "skills": ["resolution", "accuracy", "clarity"],
+                "estimated_minutes": 10,
+                "customer_name": "Chidi",
+                "customer_personality": "Careful with money, wants clear answers",
+                "customer_emotion": "Worried",
+                "customer_background": "First-time customer buying a laptop.",
+                "situation": "Checkout failed twice, but the bank app shows a "
+                "pending charge for the full amount.",
+                "customer_goal": "To know whether they were charged and to "
+                "complete the order.",
+                "trainee_objective": "Reassure the customer, explain pending "
+                "charges accurately, and help them complete the purchase.",
+                "important_information": [
+                    {
+                        "label": "Pending charges",
+                        "content": "Failed payments are released by the bank "
+                        "within 3-5 business days.",
+                    }
+                ],
+                "escalation_behavior": "Vague answers make the customer threaten "
+                "to dispute the charge with their bank.",
+                "success_criteria": "Explains the pending charge correctly, gives "
+                "a timeframe, and offers a way to complete the order.",
+            }
+        }
+    )
+
+
+class ScenarioPatch(BaseModel):
+    """Edit a scenario: send only the fields to change."""
+
+    name: Optional[str] = Field(default=None, min_length=3, max_length=255)
+    description: Optional[str] = Field(default=None, min_length=10)
+    category: Optional[TrainingCategory] = None
+    difficulty: Optional[DifficultyLevel] = None
+    persona: Optional[CustomerPersona] = None
+    skills: Optional[list[SkillDimension]] = Field(default=None, max_length=7)
+    estimated_minutes: Optional[int] = Field(default=None, ge=1, le=120)
+    customer_name: Optional[str] = Field(default=None, max_length=255)
+    customer_personality: Optional[str] = Field(default=None, max_length=255)
+    customer_emotion: Optional[str] = Field(default=None, max_length=255)
+    customer_background: Optional[str] = None
+    situation: Optional[str] = Field(default=None, min_length=10)
+    customer_goal: Optional[str] = None
+    trainee_objective: Optional[str] = Field(default=None, min_length=10)
+    important_information: Optional[list[ImportantInformation]] = None
+    escalation_behavior: Optional[str] = None
+    success_criteria: Optional[str] = None
+    system_prompt: Optional[str] = None
+    is_archived: Optional[bool] = Field(
+        default=None, description="false restores an archived scenario"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"difficulty": "advanced", "estimated_minutes": 15}
+        }
+    )
+
+
+class ScenarioManage(ScenarioBase):
+    """The full scenario as editors see it, including the hidden fields."""
+
+    id: UUID
+    tenant_id: UUID
+    is_archived: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ScenarioResponse(ScenarioBase):
