@@ -52,6 +52,12 @@ class OrganizationCreate(BaseModel):
     }
 
 
+class OrganizationRename(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+
+    model_config = {"json_schema_extra": {"example": {"name": "Acme Retail Ltd"}}}
+
+
 class OrganizationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=255)
     is_active: bool | None = Field(

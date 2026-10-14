@@ -17,6 +17,7 @@ from src.domains.tenants.schemas import (
     OrganizationCreate,
     OrganizationDetail,
     OrganizationRead,
+    OrganizationRename,
     OrganizationUpdate,
 )
 from src.domains.users import service as users_service
@@ -27,6 +28,10 @@ _session_factory = AsyncSessionLocal
 router = APIRouter(prefix="/api/v1/organizations", tags=["Organizations"])
 
 _PlatformAdmin = Annotated[AuthContext, Depends(require_roles(UserRole.PLATFORM_ADMIN))]
+_OrgStaff = Annotated[
+    AuthContext, Depends(require_roles(UserRole.COMPANY_ADMIN, UserRole.MANAGER))
+]
+_CompanyAdmin = Annotated[AuthContext, Depends(require_roles(UserRole.COMPANY_ADMIN))]
 
 _ERRORS: dict[int | str, dict] = {
     401: {"description": "Missing or invalid token"},
@@ -81,6 +86,54 @@ async def list_organizations(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     return await service.list_organizations(db)
+
+
+# /me is declared before /{organization_id} so "me" is not read as an id.
+@router.get(
+    "/me",
+    response_model=OrganizationDetail,
+    summary="Your organization",
+    description=(
+        "**Company admin / manager only.** Your organization's name, status and "
+        "counts (users, trainees, active scenarios, completed sessions), plus "
+        "its company admins and managers."
+    ),
+    responses={
+        401: {"description": "Missing or invalid token"},
+        403: {"description": "Not a company admin or manager"},
+    },
+)
+async def get_my_organization(
+    ctx: _OrgStaff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    return await service.get_organization_detail(db, ctx.tenant_id)
+
+
+@router.patch(
+    "/me",
+    response_model=OrganizationDetail,
+    summary="Rename your organization",
+    description="**Company admin only.** The name must not be used by another "
+    "organization.",
+    responses={
+        401: {"description": "Missing or invalid token"},
+        403: {"description": "Not a company admin"},
+        409: {"description": "Another organization already has this name"},
+    },
+)
+async def rename_my_organization(
+    body: OrganizationRename,
+    ctx: _CompanyAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    tenant = await tenant_repo.get(db, id=ctx.tenant_id)
+    try:
+        await service.rename_or_set_active(db, tenant, body.name, None)
+    except service.OrganizationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return await service.get_organization_detail(db, ctx.tenant_id)
 
 
 @router.get(
