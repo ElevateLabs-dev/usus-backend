@@ -300,6 +300,23 @@ async def test_role_play_evaluation_history_and_progress(client, session_factory
     )
     assert report.json()["average_score"] == 82
 
+    skills = (
+        await client.get("/api/v1/progress/team/skills", headers=manager)
+    ).json()
+    assert skills["sessions_completed"] == 2 and skills["average_score"] == 82
+    averages = [d["average"] for d in skills["dimensions"]]
+    assert len(averages) == 7 and averages == sorted(averages)  # weakest first
+    assert skills["weakest_dimension"] == skills["dimensions"][0]["id"]
+    team_empathy = next(d for d in skills["dimensions"] if d["id"] == "empathy")
+    assert team_empathy["average"] == 60 and team_empathy["sessions"] == 2
+    team_category = next(
+        c for c in skills["categories"] if c["id"] == "de_escalation"
+    )
+    assert team_category["sessions_completed"] == 2
+    assert (
+        await client.get("/api/v1/progress/team/skills", headers=trainee)
+    ).status_code == 403
+
 
 async def test_failed_evaluation_can_be_retried(client, session_factory, llm):
     await _make_org(session_factory)
