@@ -58,6 +58,23 @@ class OrganizationRename(BaseModel):
     model_config = {"json_schema_extra": {"example": {"name": "Acme Retail Ltd"}}}
 
 
+class CompanyAdminCreate(BaseModel):
+    email: EmailStr = Field(description="Stored lower-case")
+    full_name: str | None = Field(default=None, max_length=255)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"email": "ops.lead@acme.com", "full_name": "Bola Ade"}
+        }
+    }
+
+
+class StaffUpdate(BaseModel):
+    is_active: bool = Field(
+        description="false removes the user's access immediately; true restores it"
+    )
+
+
 class OrganizationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=255)
     is_active: bool | None = Field(

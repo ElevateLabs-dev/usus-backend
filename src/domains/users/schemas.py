@@ -78,7 +78,9 @@ class OrgUserRead(BaseModel):
     """A user as seen by their organization's admins/managers and by themselves."""
 
     id: UUID
-    email: EmailStr
+    # Plain str: emails were validated on the way in, and accounts created
+    # from the CLI (e.g. admin@usus.local) must not break a whole list.
+    email: str
     full_name: str | None
     role: UserRole
     tenant_id: UUID | None = Field(description="The user's organization")

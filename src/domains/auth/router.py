@@ -20,8 +20,11 @@ from src.core.config import settings
 from src.core.database import get_db
 from src.core.dependencies import (
     ALGORITHM,
+    MAINTENANCE_DETAIL,
     AuthContext,
+    UserRole,
     get_auth_context_allow_password_change,
+    maintenance_mode_enabled,
 )
 from src.core.security import MIN_PASSWORD_LENGTH, hash_password, verify_password
 from src.domains.tenants.models import Tenant
@@ -90,7 +93,12 @@ def _issue_token(user: User, tenant_id: UUID | None) -> TokenResponse:
         "Platform admins (no organization) may pass `?tenant_id=` to act inside "
         "one organization."
     ),
-    responses={401: {"description": "Incorrect email or password"}},
+    responses={
+        401: {"description": "Incorrect email or password"},
+        503: {
+            "description": "Maintenance mode is on (platform admins can still sign in)"
+        },
+    },
 )
 async def issue_token(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -111,6 +119,12 @@ async def issue_token(
         raise invalid
     if not verify_password(form.password, user.hashed_password):
         raise invalid
+
+    is_platform_admin = user.role == UserRole.PLATFORM_ADMIN.value
+    if not is_platform_admin and await maintenance_mode_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MAINTENANCE_DETAIL
+        )
 
     if user.tenant_id is not None:
         tenant = await db.get(Tenant, user.tenant_id)
