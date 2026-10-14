@@ -5,6 +5,7 @@ from src.admin import setup_admin
 from src.core.config import settings
 from src.domains.auth.router import router as auth_router
 from src.domains.evaluations.router import router as evaluations_router
+from src.domains.platform.router import router as platform_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
 from src.domains.simulations.router import router as simulations_router
@@ -32,6 +33,11 @@ OPENAPI_TAGS = [
     {
         "name": "Organizations",
         "description": "Platform admins onboard and manage client organizations.",
+    },
+    {
+        "name": "Platform",
+        "description": "Platform admins: status, activity, alerts, maintenance "
+        "mode and the Usus team's accounts.",
     },
     {
         "name": "Users & Trainees",
@@ -67,6 +73,7 @@ def create_app() -> FastAPI:
     # Register domain routers
     app.include_router(auth_router)
     app.include_router(organizations_router)
+    app.include_router(platform_router)
     app.include_router(users_router)
     app.include_router(simulations_router)
     app.include_router(evaluations_router)

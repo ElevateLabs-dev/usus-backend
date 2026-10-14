@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -24,8 +25,17 @@ class UserRole(str, Enum):
 
 
 # Imported here (not at the top): these modules import UserRole from this file.
+from src.domains.platform.models import PlatformSettings  # noqa: E402
 from src.domains.tenants.models import Tenant  # noqa: E402
 from src.domains.users.models import User  # noqa: E402
+
+MAINTENANCE_DETAIL = "Usus is down for maintenance. Please try again later."
+
+
+async def maintenance_mode_enabled(db: AsyncSession) -> bool:
+    """Whether platform admins have switched on maintenance mode."""
+    result = await db.execute(select(PlatformSettings.maintenance_mode).limit(1))
+    return bool(result.scalar_one_or_none())
 
 
 @dataclass
@@ -79,6 +89,11 @@ async def get_auth_context_allow_password_change(
             tenant_id = UUID(tenant_claim)
     except ValueError:
         raise credentials_exception
+
+    if role != UserRole.PLATFORM_ADMIN and await maintenance_mode_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=MAINTENANCE_DETAIL
+        )
 
     if tenant_id is not None and role != UserRole.PLATFORM_ADMIN:
         tenant = await db.get(Tenant, tenant_id)
