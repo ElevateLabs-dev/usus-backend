@@ -20,6 +20,8 @@ from src.domains.progress.schemas import (
     DimensionProgress,
     ProgressReport,
     ScorePoint,
+    TeamDimension,
+    TeamSkillsReport,
     TraineeSummary,
 )
 from src.domains.scenarios.models import Scenario
@@ -190,3 +192,66 @@ async def team_overview(db: AsyncSession, tenant_id: uuid.UUID) -> list[TraineeS
         )
         for user in trainees
     ]
+
+
+async def team_skills(db: AsyncSession, tenant_id: uuid.UUID) -> TeamSkillsReport:
+    """Team-wide averages per skill dimension and per training category."""
+    evaluated = (
+        await db.execute(
+            select(Scenario.category, EvaluationResult.overall_score)
+            .select_from(EvaluationResult)
+            .join(Session, Session.id == EvaluationResult.session_id)
+            .join(Scenario, Scenario.id == Session.scenario_id)
+            .where(
+                EvaluationResult.tenant_id == tenant_id,
+                EvaluationResult.overall_score.is_not(None),
+            )
+        )
+    ).all()
+
+    by_category: dict[str, list[int]] = defaultdict(list)
+    for category, score in evaluated:
+        if category:
+            by_category[category].append(score)
+
+    dim_rows = await db.execute(
+        select(DimensionScore.dimension_key, DimensionScore.score)
+        .join(EvaluationResult, EvaluationResult.id == DimensionScore.evaluation_id)
+        .where(
+            EvaluationResult.tenant_id == tenant_id,
+            DimensionScore.dimension_key.is_not(None),
+        )
+    )
+    by_dimension: dict[str, list[int]] = defaultdict(list)
+    for key, score in dim_rows.all():
+        by_dimension[key].append(score)
+
+    dimensions = sorted(
+        (
+            TeamDimension(
+                id=dimension,
+                name=dimension_name(dimension),
+                average=round(mean(by_dimension[dimension.value])),
+                sessions=len(by_dimension[dimension.value]),
+            )
+            for dimension in SkillDimension
+            if by_dimension.get(dimension.value)
+        ),
+        key=lambda item: item.average,
+    )
+
+    return TeamSkillsReport(
+        sessions_completed=len(evaluated),
+        average_score=_avg([score for _, score in evaluated]),
+        dimensions=dimensions,
+        weakest_dimension=dimensions[0].id if dimensions else None,
+        categories=[
+            CategoryProgress(
+                id=category,
+                name=name,
+                sessions_completed=len(by_category.get(category.value, [])),
+                average_score=_avg(by_category.get(category.value, [])),
+            )
+            for category, (name, _) in CATEGORY_INFO.items()
+        ],
+    )

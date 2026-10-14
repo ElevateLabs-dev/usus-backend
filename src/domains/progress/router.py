@@ -12,7 +12,11 @@ from src.core.dependencies import (
     require_roles,
 )
 from src.domains.progress import service
-from src.domains.progress.schemas import ProgressReport, TraineeSummary
+from src.domains.progress.schemas import (
+    ProgressReport,
+    TeamSkillsReport,
+    TraineeSummary,
+)
 from src.domains.users.crud import user as user_repo
 
 router = APIRouter(prefix="/api/v1/progress", tags=["Progress"])
@@ -74,6 +78,25 @@ async def team_progress(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     return await service.team_overview(db, _tenant_of(ctx))
+
+
+@router.get(
+    "/team/skills",
+    response_model=TeamSkillsReport,
+    summary="Your team's strengths and weaknesses",
+    description=(
+        "**Company admin / manager only.** Team averages for the 7 skill "
+        "dimensions (weakest first) and for each training category, across "
+        "every evaluated session in your organization. `weakest_dimension` is "
+        "the skill to focus team training on."
+    ),
+    responses=_AUTH_ERRORS,
+)
+async def team_skills(
+    ctx: _OrgStaff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    return await service.team_skills(db, _tenant_of(ctx))
 
 
 @router.get(

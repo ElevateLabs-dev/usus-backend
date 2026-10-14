@@ -58,3 +58,24 @@ class TraineeSummary(BaseModel):
     average_score: int | None
     latest_score: int | None
     last_active_at: datetime | None
+
+
+class TeamDimension(BaseModel):
+    id: SkillDimension
+    name: str
+    average: int = Field(description="Team average across evaluated sessions, 0-100")
+    sessions: int = Field(description="Evaluated sessions scored on this dimension")
+
+
+class TeamSkillsReport(BaseModel):
+    sessions_completed: int = Field(description="Evaluated sessions in the team")
+    average_score: int | None = Field(description="0-100; null before any evaluation")
+    dimensions: list[TeamDimension] = Field(
+        description="The 7 dimensions, weakest first (empty before any evaluation)"
+    )
+    weakest_dimension: SkillDimension | None = Field(
+        description="The skill to focus team training on"
+    )
+    categories: list[CategoryProgress] = Field(
+        description="Sessions and average score per training category"
+    )
