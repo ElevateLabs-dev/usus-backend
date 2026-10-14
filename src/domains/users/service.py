@@ -63,12 +63,13 @@ async def add_trainees(
 
 async def add_users(
     db: AsyncSession,
-    tenant_id: uuid.UUID,
+    tenant_id: uuid.UUID | None,
     entries: Sequence[TraineeCreate],
     role: UserRole,
 ) -> tuple[list[User], list[SkippedTrainee]]:
     """
-    Create accounts with the given role for an organization in one transaction.
+    Create accounts with the given role for an organization in one transaction
+    (tenant_id is None for platform admins).
 
     Accounts start locked (no usable password); send_invites() sets a temporary
     password and emails it. Emails already registered, or repeated within the
@@ -236,7 +237,8 @@ async def send_invites(
                 continue
 
             tenant = await db.get(Tenant, user.tenant_id) if user.tenant_id else None
-            organization = tenant.name if tenant else "Your organization"
+            # Platform admins have no organization; the Usus team invites them.
+            organization = tenant.name if tenant else "The Usus team"
 
             temporary_password = generate_temporary_password()
             # bcrypt is CPU-heavy (~0.4s); keep it off the event loop.
