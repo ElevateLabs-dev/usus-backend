@@ -52,6 +52,12 @@ class OrganizationCreate(BaseModel):
     }
 
 
+class OrganizationRename(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+
+    model_config = {"json_schema_extra": {"example": {"name": "Acme Retail Ltd"}}}
+
+
 class CompanyAdminCreate(BaseModel):
     email: EmailStr = Field(description="Stored lower-case")
     full_name: str | None = Field(default=None, max_length=255)
