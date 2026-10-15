@@ -17,6 +17,8 @@ from src.domains.progress.schemas import (
     TeamSkillsReport,
     TraineeSummary,
 )
+from src.domains.simulations import history
+from src.domains.simulations.schemas import SessionDetail
 from src.domains.users.crud import user as user_repo
 
 router = APIRouter(prefix="/api/v1/progress", tags=["Progress"])
@@ -121,3 +123,35 @@ async def user_progress(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return await service.build_report(db, tenant_id, user_id)
+
+
+@router.get(
+    "/users/{user_id}/sessions/{session_id}",
+    response_model=SessionDetail,
+    summary="One of a trainee's sessions",
+    description=(
+        "**Company admin / manager only.** A session of a user in your "
+        "organization with the transcript and evaluation. The feedback is "
+        'written about the trainee ("The trainee missed..."); trainees see '
+        'the same feedback addressed to them ("You missed..."). Session ids '
+        "come from `score_history` in `GET /progress/users/{user_id}`."
+    ),
+    responses={
+        **_AUTH_ERRORS,
+        404: {"description": "User or session not in your organization"},
+    },
+)
+async def user_session(
+    user_id: UUID,
+    session_id: UUID,
+    ctx: _OrgStaff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    detail = await history.get_session_detail(
+        db, _tenant_of(ctx), user_id, session_id, staff=True
+    )
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+    return detail

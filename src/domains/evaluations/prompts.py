@@ -323,27 +323,56 @@ GENERAL EVALUATION RULES
     referring to what was actually said. strengths may be empty if
     nothing went well.
 
-19. Return ONLY valid JSON. Do not use Markdown or code blocks.
+19. Write the summary, every rationale, strengths, improvements,
+    missed_opportunities and recommendations TO the trainee, in the
+    second person: "You acknowledged...", "You missed...", "Next time,
+    confirm...". Never write "the trainee" in those fields.
+
+20. Also write staff_view: the same feedback for the trainee's manager,
+    in the third person: "The trainee acknowledged...", "The trainee
+    missed...". Same meaning, same number of items, same order; only the
+    point of view changes.
+
+21. Red flags are for managers: write them in the third person ("The
+    trainee promised...").
+
+22. Return ONLY valid JSON. Do not use Markdown or code blocks.
 
 
 REQUIRED JSON FORMAT
 ====================
 
 {{
-  "summary": "2-3 sentence overall assessment of the trainee's performance.",
+  "summary": "2-3 sentence overall assessment, to the trainee: 'You ...'",
   "dimensions": {{
-    "accuracy":      {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "empathy":       {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "clarity":       {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "policy":        {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "resolution":    {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "de_escalation": {{"score": 0, "rationale": "Evidence-based explanation."}},
-    "efficiency":    {{"score": 0, "rationale": "Evidence-based explanation."}}
+    "accuracy":      {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "empathy":       {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "clarity":       {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "policy":        {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "resolution":    {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "de_escalation": {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}},
+    "efficiency":    {{"score": 0, "rationale": "Evidence, to the trainee: 'You ...'"}}
   }},
-  "strengths": ["What the trainee did well."],
-  "improvements": ["What the trainee did poorly."],
-  "missed_opportunities": ["A moment that needed a better response, and what."],
-  "recommendations": ["A concrete thing to do differently next time."],
+  "strengths": ["What you did well."],
+  "improvements": ["What you did poorly."],
+  "missed_opportunities": ["A moment you needed a better response, and what."],
+  "recommendations": ["A concrete thing for you to do differently next time."],
+  "staff_view": {{
+    "summary": "The same assessment for the manager: 'The trainee ...'",
+    "rationales": {{
+      "accuracy": "The trainee ...",
+      "empathy": "The trainee ...",
+      "clarity": "The trainee ...",
+      "policy": "The trainee ...",
+      "resolution": "The trainee ...",
+      "de_escalation": "The trainee ...",
+      "efficiency": "The trainee ..."
+    }},
+    "strengths": ["What the trainee did well."],
+    "improvements": ["What the trainee did poorly."],
+    "missed_opportunities": ["A moment the trainee needed a better response."],
+    "recommendations": ["A concrete thing the trainee should do next time."]
+  }},
   "red_flags": [
     {{
       "reason": "Short category describing the issue.",
@@ -377,6 +406,8 @@ IMPORTANT:
 - Evaluate only the trainee.
 - Use evidence from the conversation.
 - Score all seven dimensions.
+- Address the feedback to the trainee as "you"; staff_view describes
+  "the trainee" for their manager.
 - Do not invent missing information.
 - Return only valid JSON.
 
