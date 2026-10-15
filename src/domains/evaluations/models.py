@@ -33,6 +33,11 @@ class EvaluationResult(TenantAwareBase):
     recommendations: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
+    # The fields above speak to the trainee ("You ..."). This is the same
+    # feedback written for managers and company admins ("The trainee ..."):
+    # {summary, strengths, improvements, missed_opportunities, recommendations,
+    #  rationales: {dimension_key: text}}. Null on older evaluations.
+    staff_feedback: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[Session] = relationship()
     dimension_scores: Mapped[list["DimensionScore"]] = relationship(

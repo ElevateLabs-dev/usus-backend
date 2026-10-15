@@ -42,7 +42,19 @@ class _LLMRedFlag(BaseModel):
     description: str
 
 
+class _LLMStaffView(BaseModel):
+    """The same feedback written about the trainee, for their managers."""
+
+    summary: str
+    rationales: dict[SkillDimension, str] = {}
+    strengths: list[str] = []
+    improvements: list[str] = []
+    missed_opportunities: list[str] = []
+    recommendations: list[str] = []
+
+
 class _LLMEvaluation(BaseModel):
+    # Written to the trainee ("You ...").
     summary: str
     dimensions: dict[SkillDimension, _LLMDimension]
     strengths: list[str] = []
@@ -50,6 +62,9 @@ class _LLMEvaluation(BaseModel):
     missed_opportunities: list[str] = []
     recommendations: list[str] = []
     red_flags: list[_LLMRedFlag] = []
+    # Written about the trainee ("The trainee ..."); None if the model left it
+    # out, in which case staff see the trainee's wording.
+    staff_view: _LLMStaffView | None = None
 
 
 class EvaluationService:
@@ -102,6 +117,7 @@ class EvaluationService:
             improvements=evaluation.improvements,
             missed_opportunities=evaluation.missed_opportunities,
             recommendations=evaluation.recommendations,
+            staff_feedback=_staff_feedback(evaluation),
         )
         result.dimension_scores = [
             DimensionScore(
@@ -234,11 +250,32 @@ def _scenario_context(scenario: Scenario | None) -> str:
     return "\n".join(lines)
 
 
+def _staff_feedback(evaluation: _LLMEvaluation) -> dict | None:
+    """The staff wording as stored in EvaluationResult.staff_feedback."""
+    view = evaluation.staff_view
+    if view is None:
+        logger.warning("Evaluation has no staff_view; staff will see trainee text")
+        return None
+    return {
+        "summary": view.summary,
+        "rationales": {
+            dimension.value: text for dimension, text in view.rationales.items()
+        },
+        "strengths": view.strengths,
+        "improvements": view.improvements,
+        "missed_opportunities": view.missed_opportunities,
+        "recommendations": view.recommendations,
+    }
+
+
 def _empty_evaluation() -> _LLMEvaluation:
     """Deterministic result when the trainee never replied (no LLM call)."""
-    reason = "The trainee did not respond to the customer, so nothing could be scored."
+    reason = "You did not respond to the customer, so nothing could be scored."
+    staff_reason = (
+        "The trainee did not respond to the customer, so nothing could be scored."
+    )
     return _LLMEvaluation(
-        summary="The session ended before the trainee responded to the customer.",
+        summary="The session ended before you responded to the customer.",
         dimensions={
             d: _LLMDimension(score=0, rationale=reason) for d in SkillDimension
         },
@@ -246,4 +283,15 @@ def _empty_evaluation() -> _LLMEvaluation:
         recommendations=[
             "Start by greeting the customer and acknowledging their problem."
         ],
+        staff_view=_LLMStaffView(
+            summary="The session ended before the trainee responded to the customer.",
+            rationales={d: staff_reason for d in SkillDimension},
+            improvements=[
+                "The trainee should respond to the customer before ending the session."
+            ],
+            recommendations=[
+                "The trainee should start by greeting the customer and "
+                "acknowledging their problem."
+            ],
+        ),
     )

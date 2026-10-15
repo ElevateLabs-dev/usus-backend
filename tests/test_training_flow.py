@@ -300,18 +300,14 @@ async def test_role_play_evaluation_history_and_progress(client, session_factory
     )
     assert report.json()["average_score"] == 82
 
-    skills = (
-        await client.get("/api/v1/progress/team/skills", headers=manager)
-    ).json()
+    skills = (await client.get("/api/v1/progress/team/skills", headers=manager)).json()
     assert skills["sessions_completed"] == 2 and skills["average_score"] == 82
     averages = [d["average"] for d in skills["dimensions"]]
     assert len(averages) == 7 and averages == sorted(averages)  # weakest first
     assert skills["weakest_dimension"] == skills["dimensions"][0]["id"]
     team_empathy = next(d for d in skills["dimensions"] if d["id"] == "empathy")
     assert team_empathy["average"] == 60 and team_empathy["sessions"] == 2
-    team_category = next(
-        c for c in skills["categories"] if c["id"] == "de_escalation"
-    )
+    team_category = next(c for c in skills["categories"] if c["id"] == "de_escalation")
     assert team_category["sessions_completed"] == 2
     assert (
         await client.get("/api/v1/progress/team/skills", headers=trainee)
@@ -460,3 +456,83 @@ async def test_trainees_cannot_touch_each_others_sessions(client, session_factor
         await client.get(f"{base}/evaluation", headers=colleague)
     ).status_code == 404
     assert (await client.get(base, headers=colleague)).status_code == 404
+
+
+async def test_trainee_reads_you_and_staff_read_the_trainee(
+    client, session_factory, llm
+):
+    await _make_org(session_factory)
+    await _make_org(session_factory, name="Beta")
+    trainee = await _auth(client, "trainee@acme.com")
+    manager = await _auth(client, "manager@acme.com")
+    session_id = await _play(client, trainee, await _scenario_id(client, trainee))
+
+    llm.evaluations.append(
+        evaluation_json(
+            summary="You calmed the customer down.",
+            strengths=["You apologised sincerely."],
+            missed_opportunities=["You missed the chance to offer a voucher."],
+            staff_view={
+                "summary": "The trainee calmed the customer down.",
+                "rationales": {"empathy": "The trainee acknowledged the delay."},
+                "strengths": ["The trainee apologised sincerely."],
+                "improvements": ["The trainee took too long to offer a remedy."],
+                "missed_opportunities": [
+                    "The trainee missed the chance to offer a voucher."
+                ],
+                "recommendations": ["The trainee should lead with the remedy."],
+            },
+        )
+    )
+    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
+
+    # The trainee reads feedback addressed to them
+    mine = (
+        await client.get(
+            f"/api/v1/simulations/{session_id}/evaluation", headers=trainee
+        )
+    ).json()
+    assert mine["summary"] == "You calmed the customer down."
+    assert mine["missed_opportunities"] == ["You missed the chance to offer a voucher."]
+    assert "staff_feedback" not in mine
+
+    # Their manager reads the same feedback about "the trainee"
+    progress = (await client.get("/api/v1/progress/me", headers=trainee)).json()
+    url = f"/api/v1/progress/users/{progress['user_id']}/sessions/{session_id}"
+    staff = await client.get(url, headers=manager)
+    assert staff.status_code == 200, staff.text
+    evaluation = staff.json()["evaluation"]
+    assert evaluation["summary"] == "The trainee calmed the customer down."
+    assert evaluation["missed_opportunities"] == [
+        "The trainee missed the chance to offer a voucher."
+    ]
+    rationales = {
+        d["dimension_key"]: d["rationale"] for d in evaluation["dimension_scores"]
+    }
+    assert rationales["empathy"] == "The trainee acknowledged the delay."
+    assert rationales["accuracy"] == "Because"  # no staff wording -> unchanged
+    assert [m["role"] for m in staff.json()["messages"]] == ["user", "model"]
+
+    # Trainees cannot use the staff route; other organizations cannot see it
+    assert (await client.get(url, headers=trainee)).status_code == 403
+    other = await _auth(client, "manager@beta.com")
+    assert (await client.get(url, headers=other)).status_code == 404
+
+
+async def test_staff_see_trainee_wording_when_staff_view_is_missing(
+    client, session_factory, llm
+):
+    await _make_org(session_factory)
+    trainee = await _auth(client, "trainee@acme.com")
+    manager = await _auth(client, "manager@acme.com")
+    session_id = await _play(client, trainee, await _scenario_id(client, trainee))
+
+    llm.evaluations.append(evaluation_json())  # no staff_view (older format)
+    await client.post(f"/api/v1/simulations/{session_id}/end", headers=trainee)
+
+    progress = (await client.get("/api/v1/progress/me", headers=trainee)).json()
+    staff = await client.get(
+        f"/api/v1/progress/users/{progress['user_id']}/sessions/{session_id}",
+        headers=manager,
+    )
+    assert staff.json()["evaluation"]["summary"] == "Solid handling overall."
