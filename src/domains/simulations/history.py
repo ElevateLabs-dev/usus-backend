@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.training import category_name
 from src.domains.evaluations.crud import evaluation_result as eval_result_repo
 from src.domains.evaluations.models import EvaluationResult
+from src.domains.evaluations.schemas import EvaluationResultDetailResponse
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.schemas import CategoryRef
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
@@ -90,9 +91,57 @@ async def list_history(
     return HistoryPage(items=[_to_item(*row) for row in rows.all()], total=total)
 
 
+def _staff_wording(
+    evaluation: EvaluationResult,
+) -> EvaluationResultDetailResponse:
+    """
+    The evaluation as managers read it: feedback about "the trainee" instead
+    of "you". Older evaluations have no staff wording and are returned as is.
+    """
+    response = EvaluationResultDetailResponse.model_validate(evaluation)
+    staff = evaluation.staff_feedback
+    if not staff:
+        return response
+
+    rationales = staff.get("rationales") or {}
+    return response.model_copy(
+        update={
+            field: staff[field]
+            for field in (
+                "summary",
+                "strengths",
+                "improvements",
+                "missed_opportunities",
+                "recommendations",
+            )
+            if field in staff
+        }
+        | {
+            "dimension_scores": [
+                score.model_copy(
+                    update={
+                        "rationale": rationales.get(
+                            score.dimension_key, score.rationale
+                        )
+                    }
+                )
+                for score in response.dimension_scores
+            ]
+        }
+    )
+
+
 async def get_session_detail(
-    db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID, session_id: uuid.UUID
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    staff: bool = False,
 ) -> SessionDetail | None:
+    """
+    One of the user's sessions with transcript and evaluation. With
+    staff=True the evaluation uses the wording for managers.
+    """
     row = (
         await db.execute(
             _history_query(tenant_id, user_id).where(Session.id == session_id)
@@ -122,5 +171,9 @@ async def get_session_detail(
     return SessionDetail(
         **_to_item(*row).model_dump(),
         messages=[TranscriptMessage.model_validate(m) for m in messages],
-        evaluation=evaluation,
+        evaluation=(
+            _staff_wording(evaluation)
+            if staff and evaluation is not None
+            else evaluation
+        ),
     )
