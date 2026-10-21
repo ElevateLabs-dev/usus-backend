@@ -20,6 +20,7 @@ from src.domains.evaluations.crud import (
     red_flag as red_flag_repo,
 )
 from src.domains.evaluations.service import EvaluationService
+from src.domains.notifications.service import notify_evaluation_ready
 from src.domains.simulations.crud import (
     message as message_repo,
 )
@@ -113,10 +114,11 @@ async def _evaluate(
         # Saves the evaluation and marks the session EVALUATED in one
         # transaction. A session the trainee never replied in is scored 0
         # without calling the LLM.
-        await evaluation_service.evaluate_session(
+        result = await evaluation_service.evaluate_session(
             db=db,
             tenant_id=tenant_id,
             session=session,
             messages=session_messages,
         )
+        await notify_evaluation_ready(db, session_id, result.overall_score)
         return "completed"

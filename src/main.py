@@ -5,6 +5,7 @@ from src.admin import setup_admin
 from src.core.config import settings
 from src.domains.auth.router import router as auth_router
 from src.domains.evaluations.router import router as evaluations_router
+from src.domains.notifications.router import router as notifications_router
 from src.domains.platform.router import router as platform_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
@@ -53,6 +54,7 @@ OPENAPI_TAGS = [
         "description": "Trainee progress, and a team overview for managers.",
     },
     {"name": "Evaluations", "description": "Evaluation jobs."},
+    {"name": "Notifications", "description": "In-app notifications (the bell)."},
 ]
 
 
@@ -79,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(evaluations_router)
     app.include_router(scenarios_router)
     app.include_router(progress_router)
+    app.include_router(notifications_router)
 
     # Mount the admin panel at /admin
     setup_admin(app)
