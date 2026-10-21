@@ -12,6 +12,7 @@ from src.core.dependencies import (
     require_roles,
 )
 from src.core.training import TrainingCategory
+from src.domains.notifications.service import notify_scenario_added
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.models import DifficultyLevel, Scenario
 from src.domains.scenarios.schemas import (
@@ -200,12 +201,14 @@ async def create_scenario(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     try:
-        return await _scenario_service.create_scenario(db, _tenant_of(ctx), body)
+        scenario = await _scenario_service.create_scenario(db, _tenant_of(ctx), body)
     except ScenarioNameTakenError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A scenario with this name already exists",
         )
+    await notify_scenario_added(db, scenario)
+    return scenario
 
 
 @router.get(
