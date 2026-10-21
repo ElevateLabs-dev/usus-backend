@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.core.database import AsyncSessionLocal
 from src.core.dependencies import UserRole
 from src.domains.notifications.models import Notification
 from src.domains.scenarios.models import Scenario
@@ -138,23 +139,31 @@ async def notify_evaluation_ready(
         await db.rollback()
 
 
-async def notify_scenario_added(db: AsyncSession, scenario: Scenario) -> None:
-    """Tell the organization's trainees about a new scenario."""
+async def notify_scenario_added(
+    scenario_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    scenario_name: str,
+    session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
+) -> None:
+    """Tell the organization's trainees about a new scenario.
+
+    Runs as a background task with its own database session, after the
+    response is sent, so it can never affect the request that created the
+    scenario.
+    """
     try:
-        trainee_ids = await _active_user_ids(
-            db, scenario.tenant_id, [UserRole.TRAINEE]
-        )
-        db.add_all(
-            Notification(
-                user_id=user_id,
-                kind="scenario_added",
-                title="New scenario available",
-                body=scenario.name,
-                link=f"/scenarios/{scenario.id}",
+        async with session_factory() as db:
+            trainee_ids = await _active_user_ids(db, tenant_id, [UserRole.TRAINEE])
+            db.add_all(
+                Notification(
+                    user_id=user_id,
+                    kind="scenario_added",
+                    title="New scenario available",
+                    body=scenario_name,
+                    link=f"/scenarios/{scenario_id}",
+                )
+                for user_id in trainee_ids
             )
-            for user_id in trainee_ids
-        )
-        await db.commit()
+            await db.commit()
     except Exception:
-        logger.exception("Could not notify about scenario %s", scenario.id)
-        await db.rollback()
+        logger.exception("Could not notify about scenario %s", scenario_id)

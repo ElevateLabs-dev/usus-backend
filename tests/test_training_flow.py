@@ -20,6 +20,7 @@ from src.core.database import get_db
 from src.core.security import hash_password
 from src.core.training import SkillDimension
 from src.domains.evaluations import router as evaluations_router
+from src.domains.scenarios import router as scenarios_router
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.service import ScenarioService
 from src.domains.simulations import router as simulations_router
@@ -98,6 +99,7 @@ async def client(session_factory, llm, monkeypatch):
     # Background evaluations use the test database too
     monkeypatch.setattr(simulations_router, "_session_factory", session_factory)
     monkeypatch.setattr(evaluations_router, "_session_factory", session_factory)
+    monkeypatch.setattr(scenarios_router, "_session_factory", session_factory)
     monkeypatch.setattr(evaluations_router, "_llm_provider", llm)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

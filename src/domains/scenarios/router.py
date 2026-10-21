@@ -1,10 +1,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_db
+from src.core.database import AsyncSessionLocal, get_db
 from src.core.dependencies import (
     AuthContext,
     UserRole,
@@ -31,6 +39,9 @@ router = APIRouter(
     prefix="/api/v1/scenarios",
     tags=["Scenarios"],
 )
+
+# Session factory for background notifications (swapped out in tests).
+_session_factory = AsyncSessionLocal
 
 _AUTH_ERRORS: dict[int | str, dict] = {
     401: {"description": "Missing/invalid token, or no organization in the token"},
@@ -199,6 +210,7 @@ async def create_scenario(
     body: ScenarioWrite,
     ctx: _Editor,
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     try:
         scenario = await _scenario_service.create_scenario(db, _tenant_of(ctx), body)
@@ -207,7 +219,14 @@ async def create_scenario(
             status_code=status.HTTP_409_CONFLICT,
             detail="A scenario with this name already exists",
         )
-    await notify_scenario_added(db, scenario)
+    # Sent after the response, so a failure there can't affect it.
+    background_tasks.add_task(
+        notify_scenario_added,
+        scenario.id,
+        scenario.tenant_id,
+        scenario.name,
+        _session_factory,
+    )
     return scenario
 
 

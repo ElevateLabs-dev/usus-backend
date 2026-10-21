@@ -19,6 +19,7 @@ import src.domains.evaluations.models  # noqa: F401  (register all tables)
 from src.core.base_model import Base
 from src.core.database import get_db
 from src.core.security import hash_password
+from src.domains.scenarios import router as scenarios_router
 from src.domains.simulations import router as simulations_router
 from src.domains.tenants import router as organizations_router
 from src.domains.users import router as users_router
@@ -91,7 +92,12 @@ async def client(session_factory, outbox, llm, monkeypatch):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    for module in (users_router, organizations_router, simulations_router):
+    for module in (
+        users_router,
+        organizations_router,
+        simulations_router,
+        scenarios_router,
+    ):
         monkeypatch.setattr(module, "_session_factory", session_factory)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
