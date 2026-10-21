@@ -77,6 +77,18 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class VoiceStartResponse(BaseModel):
+    """Pass `assistant_id` to `vapi.start()` in the Vapi Web SDK."""
+
+    assistant_id: str
+
+
+class VoiceEndRequest(BaseModel):
+    """The id of the call returned by `vapi.start()`."""
+
+    call_id: str = Field(min_length=1, max_length=64)
+
+
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
