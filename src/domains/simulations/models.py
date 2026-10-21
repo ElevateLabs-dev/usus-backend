@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,6 +54,13 @@ class Session(TenantAwareBase):
     ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Voice sessions: the Vapi assistant created for this session and the
+    # call it was used in (both None for text sessions).
+    voice_assistant_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    voice_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     scenario: Mapped[Scenario] = relationship()
 
