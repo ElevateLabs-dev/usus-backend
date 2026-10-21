@@ -1,6 +1,7 @@
 # ruff: noqa: F811  (pytest fixtures shared with test_training_flow)
 """Notifications: evaluation ready, session completed, new scenario."""
 
+from src.domains.scenarios import router as scenarios_router
 from tests.test_training_flow import (  # noqa: F401  (fixtures)
     _auth,
     _make_org,
@@ -88,3 +89,30 @@ async def test_mark_read(client, session_factory):
     response = await client.post("/api/v1/notifications/read-all", headers=trainee)
     assert response.status_code == 204
     assert (await _notifications(client, trainee))["unread_count"] == 0
+
+
+async def test_scenario_is_created_even_if_notifying_fails(
+    client, session_factory, monkeypatch
+):
+    await _make_org(session_factory)
+    manager = await _auth(client, "manager@acme.com")
+
+    def broken_factory():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(scenarios_router, "_session_factory", broken_factory)
+    created = await client.post(
+        "/api/v1/scenarios/",
+        json={
+            "name": "Lost Parcel",
+            "description": "A parcel never arrived.",
+            "category": "problem_resolution",
+            "difficulty": "beginner",
+            "persona": "frustrated",
+            "situation": "The tracking says delivered.",
+            "trainee_objective": "Find a fair resolution.",
+        },
+        headers=manager,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["name"] == "Lost Parcel"
