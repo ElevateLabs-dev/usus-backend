@@ -29,9 +29,17 @@ from src.domains.simulations.schemas import (
     SessionDetail,
     SessionResponse,
     StartSessionRequest,
+    VoiceEndRequest,
+    VoiceStartResponse,
 )
 from src.domains.simulations.service import SimulationService
+from src.domains.simulations.voice import (
+    VoiceError,
+    save_voice_transcript,
+    start_voice,
+)
 from src.infrastructure.llm.factory import get_llm_provider
+from src.infrastructure.voice.vapi import VapiClient, VapiError
 
 # ---------------------------------------------------------------------------
 # Services
@@ -49,6 +57,9 @@ _simulation_service = SimulationService(
 
 # Session factory used by the background evaluation (swapped out in tests).
 _session_factory = AsyncSessionLocal
+
+# Voice role-play (swapped out in tests).
+_vapi = VapiClient()
 
 
 # ---------------------------------------------------------------------------
@@ -191,32 +202,11 @@ async def send_message(
     )
 
 
-@router.post(
-    "/{session_id}/end",
-    response_model=SessionResponse,
-    status_code=status.HTTP_200_OK,
-    summary="End the session (evaluation runs in the background)",
-    description=(
-        "Marks the session `completed` and returns immediately. The AI "
-        "evaluation — 7 dimensions (Accuracy, Empathy, Clarity, Policy, "
-        "Resolution, De-escalation, Efficiency; 0-100 each) plus strengths, "
-        "improvements, missed opportunities and recommendations — is generated "
-        "in the background, usually within 10-30 seconds.\n\n"
-        "Poll `GET /simulations/{session_id}/evaluation` until it returns 200; "
-        "the session's status then becomes `evaluated`.\n\n"
-        "Safe to call again: for a `completed` session it queues the evaluation "
-        "again (retrying one that failed); an `evaluated` session is unchanged."
-    ),
-    responses={**_AUTH_ERRORS, 404: {"description": "Session not found"}},
-)
-async def end_simulation(
-    session_id: UUID,
-    ctx: Annotated[AuthContext, Depends(get_auth_context)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    background_tasks: BackgroundTasks,
-):
-    session = await _owned_session(db, ctx, session_id)
-
+async def _end_and_evaluate(
+    db: AsyncSession, session: Session, background_tasks: BackgroundTasks
+) -> Session:
+    """End the session and queue its evaluation (see end_simulation)."""
+    session_id = session.id
     try:
         completed_session = await _simulation_service.end_session(
             db=db,
@@ -242,6 +232,121 @@ async def end_simulation(
         )
 
     return completed_session
+
+
+@router.post(
+    "/{session_id}/end",
+    response_model=SessionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="End the session (evaluation runs in the background)",
+    description=(
+        "Marks the session `completed` and returns immediately. The AI "
+        "evaluation — 7 dimensions (Accuracy, Empathy, Clarity, Policy, "
+        "Resolution, De-escalation, Efficiency; 0-100 each) plus strengths, "
+        "improvements, missed opportunities and recommendations — is generated "
+        "in the background, usually within 10-30 seconds.\n\n"
+        "Poll `GET /simulations/{session_id}/evaluation` until it returns 200; "
+        "the session's status then becomes `evaluated`.\n\n"
+        "Safe to call again: for a `completed` session it queues the evaluation "
+        "again (retrying one that failed); an `evaluated` session is unchanged."
+    ),
+    responses={**_AUTH_ERRORS, 404: {"description": "Session not found"}},
+)
+async def end_simulation(
+    session_id: UUID,
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    session = await _owned_session(db, ctx, session_id)
+    return await _end_and_evaluate(db, session, background_tasks)
+
+
+@router.post(
+    "/{session_id}/voice",
+    response_model=VoiceStartResponse,
+    summary="Start a voice call for the session",
+    description=(
+        "Creates the AI customer as a Vapi assistant and returns its id. In the "
+        "browser, start the call with the Vapi Web SDK: "
+        "`vapi.start(assistant_id)`. When the call is over, send its id to "
+        "`POST /simulations/{session_id}/voice/end`.\n\n"
+        "Calling it again for the same session returns the same assistant."
+    ),
+    responses={
+        **_AUTH_ERRORS,
+        400: {"description": "The session is no longer active"},
+        404: {"description": "Session not found"},
+        502: {"description": "Vapi could not create the call"},
+        503: {"description": "Voice role-play is not configured"},
+    },
+)
+async def start_voice_call(
+    session_id: UUID,
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not _vapi.configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Voice role-play is not available",
+        )
+    session = await _owned_session(db, ctx, session_id)
+    scenario = await scenario_repo.get(
+        db=db, id=session.scenario_id, tenant_id=session.tenant_id
+    )
+    try:
+        assistant_id = await start_voice(
+            db, session, scenario.name if scenario else "Customer", _vapi
+        )
+    except VoiceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except VapiError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start the voice call. Please try again.",
+        )
+    return VoiceStartResponse(assistant_id=assistant_id)
+
+
+@router.post(
+    "/{session_id}/voice/end",
+    response_model=SessionResponse,
+    summary="End a voice session (evaluation runs in the background)",
+    description=(
+        "Call after the voice call has ended. Saves the call's transcript as the "
+        "session's messages, ends the session and queues the evaluation, exactly "
+        "like `POST /simulations/{session_id}/end`. Can take a few seconds while "
+        "Vapi finishes the transcript. Safe to call again."
+    ),
+    responses={
+        **_AUTH_ERRORS,
+        400: {"description": "The call does not belong to this session"},
+        404: {"description": "Session not found"},
+        502: {"description": "Vapi could not return the call"},
+    },
+)
+async def end_voice_call(
+    session_id: UUID,
+    body: VoiceEndRequest,
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    session = await _owned_session(db, ctx, session_id)
+    if session.status == SessionStatus.IN_PROGRESS:
+        try:
+            await save_voice_transcript(db, session, body.call_id, _vapi)
+        except VoiceError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            )
+        except VapiError:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not fetch the call. Please try again.",
+            )
+    return await _end_and_evaluate(db, session, background_tasks)
 
 
 @router.get(
