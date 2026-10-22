@@ -37,6 +37,8 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: VAPI_API_KEY # Vapi private key (voice role-play)
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM # e.g. "Usus <no-reply@your-verified-domain.com>"

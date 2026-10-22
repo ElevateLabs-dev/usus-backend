@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     # Where trainees sign in; used for the link in invite emails
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Voice role-play via Vapi (https://vapi.ai). Without VAPI_API_KEY only
+    # text role-play is available. This is the private key; the frontend uses
+    # the public one.
+    VAPI_API_KEY: Optional[str] = None
+    VAPI_VOICE_PROVIDER: str = "vapi"
+    VAPI_VOICE_ID: str = "Elliot"
+    VAPI_MODEL: str = "gpt-4.1-mini"
+    VAPI_MAX_CALL_SECONDS: int = 900
+
     # AWS Storage
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
