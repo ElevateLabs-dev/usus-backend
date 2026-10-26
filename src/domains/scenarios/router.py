@@ -74,6 +74,15 @@ def _tenant_of(ctx: AuthContext) -> UUID:
     return ctx.tenant_id
 
 
+async def _locked_levels(
+    db: AsyncSession, ctx: AuthContext, tenant_id: UUID, progress: dict
+) -> dict:
+    """Levels are only locked for trainees; staff can try every scenario."""
+    if ctx.role != UserRole.TRAINEE:
+        return {}
+    return await _scenario_service.locked_levels(db, tenant_id, progress)
+
+
 @router.get(
     "/categories",
     response_model=list[CategoryResponse],
@@ -100,7 +109,8 @@ async def list_categories(
         "Scenarios for your organization, ordered by category then difficulty "
         "(Beginner → Advanced). Each item includes **your own** progress: "
         "`status` (new / in_progress / completed), `attempts`, `best_score` and "
-        "`last_score`."
+        "`last_score`, and whether the level is `locked` for you (trainees "
+        "unlock Intermediate by passing every Beginner scenario, then Advanced)."
     ),
     responses=_AUTH_ERRORS,
 )
@@ -119,7 +129,11 @@ async def list_scenarios(
         db, tenant_id, category=category, difficulty=difficulty
     )
     progress = await _scenario_service.user_progress(db, tenant_id, ctx.user_id)
-    return [_scenario_service.to_summary(s, progress.get(s.id)) for s in scenarios]
+    locked = await _locked_levels(db, ctx, tenant_id, progress)
+    return [
+        _scenario_service.to_summary(s, progress.get(s.id), locked.get(s.difficulty))
+        for s in scenarios
+    ]
 
 
 @router.get(
@@ -169,7 +183,10 @@ async def get_scenario_detail(
         )
 
     progress = await _scenario_service.user_progress(db, tenant_id, ctx.user_id)
-    return _scenario_service.to_brief(scenario, progress.get(scenario.id))
+    locked = await _locked_levels(db, ctx, tenant_id, progress)
+    return _scenario_service.to_brief(
+        scenario, progress.get(scenario.id), locked.get(scenario.difficulty)
+    )
 
 
 # ---------------------------------------------------------------------------

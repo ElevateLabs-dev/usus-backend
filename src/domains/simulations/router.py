@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import AsyncSessionLocal, get_db
-from src.core.dependencies import AuthContext, get_auth_context
+from src.core.dependencies import AuthContext, UserRole, get_auth_context
 from src.domains.evaluations.crud import (
     evaluation_result as eval_result_repo,
 )
@@ -14,6 +14,7 @@ from src.domains.evaluations.schemas import (
     EvaluationResultDetailResponse,
 )
 from src.domains.scenarios.crud import scenario as scenario_repo
+from src.domains.scenarios.service import ScenarioService
 from src.domains.simulations import history
 from src.domains.simulations.crud import (
     message as message_repo,
@@ -107,6 +108,24 @@ async def simulation_health_check():
     }
 
 
+async def _check_level_unlocked(
+    db: AsyncSession, ctx: AuthContext, scenario_id: UUID
+) -> None:
+    """Trainees cannot start a scenario whose level is still locked."""
+    tenant_id = _tenant_of(ctx)
+    scenario = await scenario_repo.get(db=db, id=scenario_id, tenant_id=tenant_id)
+    if scenario is None or scenario.is_archived:
+        return  # start_session reports the 404
+    scenarios = ScenarioService(scenario_repo)
+    progress = await scenarios.user_progress(db, tenant_id, ctx.user_id)
+    locked = await scenarios.locked_levels(db, tenant_id, progress)
+    if scenario.difficulty in locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=locked[scenario.difficulty],
+        )
+
+
 @router.post(
     "/start",
     response_model=SessionResponse,
@@ -117,13 +136,20 @@ async def simulation_health_check():
         "scenario. Then send the trainee's messages with "
         "`POST /simulations/{session_id}/message`."
     ),
-    responses={**_AUTH_ERRORS, 404: {"description": "Scenario not found"}},
+    responses={
+        **_AUTH_ERRORS,
+        403: {"description": "The scenario's level is still locked for you"},
+        404: {"description": "Scenario not found"},
+    },
 )
 async def start_simulation(
     body: StartSessionRequest,
     ctx: Annotated[AuthContext, Depends(get_auth_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if ctx.role == UserRole.TRAINEE:
+        await _check_level_unlocked(db, ctx, body.scenario_id)
+
     try:
         session = await _simulation_service.start_session(
             db=db,

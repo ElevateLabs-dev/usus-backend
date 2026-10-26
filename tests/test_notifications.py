@@ -31,7 +31,7 @@ async def test_evaluation_notifies_trainee_and_manager(client, session_factory):
     assert mine["unread_count"] == 1
     assert mine["items"][0]["kind"] == "evaluation_ready"
     assert mine["items"][0]["link"] == f"/history/{session_id}"
-    assert "Late Delivery Complaint" in mine["items"][0]["body"]
+    assert "SaaS Subscription Cancellation" in mine["items"][0]["body"]
 
     team = await _notifications(client, manager)
     assert team["unread_count"] == 1

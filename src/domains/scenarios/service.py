@@ -25,7 +25,7 @@ from src.domains.scenarios.schemas import (
     ScenarioWrite,
     SkillRef,
 )
-from src.domains.simulations.models import Session, SessionStatus
+from src.domains.simulations.models import Session
 
 _DIFFICULTY_ORDER = {
     DifficultyLevel.BEGINNER: 0,
@@ -43,6 +43,23 @@ _REQUIRED_FIELDS = {
     "estimated_minutes",
     "important_information",
     "is_archived",
+}
+
+
+# A scenario counts as passed (and towards unlocking the next level) once the
+# trainee's best overall score reaches this.
+PASS_SCORE = 60
+
+_LEVELS = [
+    DifficultyLevel.BEGINNER,
+    DifficultyLevel.INTERMEDIATE,
+    DifficultyLevel.ADVANCED,
+]
+
+_LEVEL_NAMES = {
+    DifficultyLevel.BEGINNER: "Beginner",
+    DifficultyLevel.INTERMEDIATE: "Intermediate",
+    DifficultyLevel.ADVANCED: "Advanced",
 }
 
 
@@ -128,27 +145,60 @@ class ScenarioService:
                 ),
             )
             entry.attempts += 1
-            if status == SessionStatus.IN_PROGRESS:
-                entry.status = "in_progress"
             if score is not None:
                 entry.last_score = score
                 entry.best_score = max(entry.best_score or 0, score)
-                if entry.status == "new":
-                    entry.status = "completed"
+
+        for entry in progress.values():
+            passed = (entry.best_score or 0) >= PASS_SCORE
+            entry.status = "completed" if passed else "in_progress"
         return progress
+
+    async def locked_levels(
+        self,
+        db: AsyncSession,
+        tenant_id: uuid.UUID,
+        progress: dict[uuid.UUID, ScenarioProgress],
+    ) -> dict[DifficultyLevel, str]:
+        """
+        The levels a trainee cannot start yet, each with the reason.
+
+        Beginner is always open. Each next level opens once every active
+        scenario of the level before it is passed (an empty level counts as
+        passed).
+        """
+        scenarios = await self.list_all_scenarios(db, tenant_id)
+        locked: dict[DifficultyLevel, str] = {}
+        for previous, level in zip(_LEVELS, _LEVELS[1:]):
+            unpassed = [
+                s
+                for s in scenarios
+                if s.difficulty == previous
+                and (progress.get(s.id) is None or progress[s.id].status != "completed")
+            ]
+            if previous in locked or unpassed:
+                locked[level] = (
+                    f"Pass every {_LEVEL_NAMES[previous]} scenario (score "
+                    f"{PASS_SCORE}% or more) to unlock {_LEVEL_NAMES[level]}."
+                )
+        return locked
 
     @staticmethod
     def to_summary(
-        scenario: Scenario, progress: ScenarioProgress | None
+        scenario: Scenario,
+        progress: ScenarioProgress | None,
+        locked_reason: str | None = None,
     ) -> ScenarioSummary:
-        return ScenarioSummary(**_summary_fields(scenario, progress))
+        return ScenarioSummary(**_summary_fields(scenario, progress, locked_reason))
 
     @staticmethod
     def to_brief(
-        scenario: Scenario, progress: ScenarioProgress | None
+        scenario: Scenario,
+        progress: ScenarioProgress | None,
+        locked_reason: str | None = None,
     ) -> ScenarioBrief:
         return ScenarioBrief(
-            **_summary_fields(scenario, progress),
+            **_summary_fields(scenario, progress, locked_reason),
             customer=CustomerProfile(
                 name=scenario.customer_name,
                 personality=scenario.customer_personality,
@@ -233,7 +283,11 @@ class ScenarioService:
         return await self.list_all_scenarios(db, tenant_id)
 
 
-def _summary_fields(scenario: Scenario, progress: ScenarioProgress | None) -> dict:
+def _summary_fields(
+    scenario: Scenario,
+    progress: ScenarioProgress | None,
+    locked_reason: str | None = None,
+) -> dict:
     category = (
         CategoryRef(id=scenario.category, name=category_name(scenario.category))
         if scenario.category
@@ -253,4 +307,6 @@ def _summary_fields(scenario: Scenario, progress: ScenarioProgress | None) -> di
         "estimated_minutes": scenario.estimated_minutes,
         "progress": progress
         or ScenarioProgress(status="new", attempts=0, best_score=None, last_score=None),
+        "locked": locked_reason is not None,
+        "locked_reason": locked_reason,
     }
