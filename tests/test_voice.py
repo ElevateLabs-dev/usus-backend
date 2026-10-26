@@ -39,6 +39,8 @@ class FakeVapi:
                 {"role": "user", "message": "Hello, how can I help?"},
                 {"role": "bot", "message": "My parcel is three days late."},
                 {"role": "user", "message": "I'm sorry, let me check that."},
+                {"role": "bot", "message": "Please do, I need it by Friday."},
+                {"role": "user", "message": "It arrives tomorrow, here's a voucher."},
             ],
         }
 
@@ -75,7 +77,7 @@ async def test_voice_session_is_transcribed_and_evaluated(
     config = vapi.assistants[0]
     assert config["firstMessageMode"] == "assistant-waits-for-user"
     prompt = config["model"]["messages"][0]["content"]
-    assert "Jordan" in prompt and "phone call" in prompt
+    assert "Alex" in prompt and "phone call" in prompt
 
     # Same session, same assistant
     again = await client.post(
@@ -100,6 +102,8 @@ async def test_voice_session_is_transcribed_and_evaluated(
         ("user", "Hello, how can I help?"),
         ("model", "My parcel is three days late."),
         ("user", "I'm sorry, let me check that."),
+        ("model", "Please do, I need it by Friday."),
+        ("user", "It arrives tomorrow, here's a voucher."),
     ]
 
     # Ending again changes nothing
@@ -112,7 +116,7 @@ async def test_voice_session_is_transcribed_and_evaluated(
     detail = (
         await client.get(f"/api/v1/simulations/{session_id}", headers=trainee)
     ).json()
-    assert len(detail["messages"]) == 3
+    assert len(detail["messages"]) == 5
 
 
 async def test_call_from_another_assistant_is_rejected(client, session_factory, vapi):

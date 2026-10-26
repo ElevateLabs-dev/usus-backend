@@ -12,6 +12,7 @@ Voice role-play with Vapi.
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,14 +123,18 @@ async def save_voice_transcript(
     if call.get("assistantId") != session.voice_assistant_id:
         raise VoiceError("This call does not belong to the session")
 
+    # Messages are listed by created_at; one transaction would give them all
+    # the same time, so space them a millisecond apart to keep their order.
+    started = datetime.now(timezone.utc)
     db.add_all(
         Message(
             tenant_id=session.tenant_id,
             session_id=session.id,
             role=role,
             content=text,
+            created_at=started + timedelta(milliseconds=index),
         )
-        for role, text in _transcript(call)
+        for index, (role, text) in enumerate(_transcript(call))
     )
     session.voice_call_id = call_id
     await db.commit()
