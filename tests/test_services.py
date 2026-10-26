@@ -131,7 +131,10 @@ async def test_full_simulation_loop(
 
     # Send Message
     model_msg = await simulation_service.send_message(
-        db_session, tenant_id, session.id, "Hello, how can I help?"
+        db_session, tenant_id, session.id, "Hello, thanks for calling. How can I help?"
+    )
+    await simulation_service.send_message(
+        db_session, tenant_id, session.id, "I'm sorry about that, let me fix it now."
     )
     assert model_msg.role == MessageRole.MODEL
     assert model_msg.content == "I am a mock response from the customer."

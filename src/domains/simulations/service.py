@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domains.scenarios.crud import CRUDScenario
-from src.domains.scenarios.prompts import build_customer_prompt
+from src.domains.scenarios.prompts import build_customer_prompt, customer_reminder
 from src.domains.simulations.crud import (
     CRUDMessage,
     CRUDSession,
@@ -131,6 +131,15 @@ class SimulationService:
             for message in session_msgs
             if message.role != MessageRole.SYSTEM
         ]
+
+        # Remind the model who it is right after the agent's latest message,
+        # so the agent cannot talk it out of the customer role. Not stored.
+        scenario = await self.scenario_repo.get(
+            db=db, id=session.scenario_id, tenant_id=tenant_id
+        )
+        if scenario is not None and llm_messages:
+            last = llm_messages[-1]
+            last["content"] = f"{last['content']}\n\n{customer_reminder(scenario)}"
 
         response_text = await self.llm_provider.generate_response(
             system_prompt=system_prompt,

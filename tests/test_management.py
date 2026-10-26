@@ -343,7 +343,7 @@ NEW_SCENARIO = {
     "name": "Failed Payment at Checkout",
     "description": "A customer's card was declined twice but shows a pending charge.",
     "category": "problem_resolution",
-    "difficulty": "intermediate",
+    "difficulty": "beginner",
     "persona": "frustrated",
     "skills": ["resolution", "accuracy"],
     "customer_name": "Chidi",

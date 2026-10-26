@@ -28,6 +28,12 @@ from src.infrastructure.llm.base import LLMProvider
 logger = logging.getLogger("usus.evaluations")
 
 
+# Below this, a session is too short to assess and scores 0 without asking
+# the LLM (e.g. a trainee who only says "hi" and ends the session).
+MIN_TRAINEE_TURNS = 2
+MIN_TRAINEE_WORDS = 15
+
+
 class EvaluationFailedError(Exception):
     """The LLM did not return a usable evaluation (after retrying)."""
 
@@ -95,8 +101,11 @@ class EvaluationService:
         """
         scenario = await db.get(Scenario, session.scenario_id)
 
-        if not any(m.role == MessageRole.USER for m in messages):
+        trainee_turns, trainee_words = _trainee_effort(messages)
+        if trainee_turns == 0:
             evaluation = _empty_evaluation()
+        elif trainee_turns < MIN_TRAINEE_TURNS or trainee_words < MIN_TRAINEE_WORDS:
+            evaluation = _too_short_evaluation()
         else:
             evaluation = await self._ask_llm(scenario, messages)
 
@@ -152,7 +161,7 @@ class EvaluationService:
             {
                 "role": "user",
                 "content": build_evaluation_user_prompt(
-                    _scenario_context(scenario), transcript
+                    _scenario_context(scenario), transcript, *_trainee_effort(messages)
                 ),
             }
         ]
@@ -266,6 +275,49 @@ def _staff_feedback(evaluation: _LLMEvaluation) -> dict | None:
         "missed_opportunities": view.missed_opportunities,
         "recommendations": view.recommendations,
     }
+
+
+def _trainee_effort(messages: Sequence[Message]) -> tuple[int, int]:
+    """How many messages and words the trainee sent."""
+    said = [m.content for m in messages if m.role == MessageRole.USER]
+    return len(said), sum(len(text.split()) for text in said)
+
+
+def _too_short_evaluation() -> _LLMEvaluation:
+    """Deterministic result when the trainee barely engaged (no LLM call)."""
+    reason = "The conversation was too short to show this skill, so it scores 0."
+    staff_reason = "The conversation was too short for the trainee to show this skill."
+    return _LLMEvaluation(
+        summary=(
+            "The session ended before you dealt with the customer's problem, "
+            "so there was nothing to assess."
+        ),
+        dimensions={
+            d: _LLMDimension(score=0, rationale=reason) for d in SkillDimension
+        },
+        improvements=[
+            "Stay in the conversation until the customer's problem is handled."
+        ],
+        recommendations=[
+            "Greet the customer, find out what they need, and work towards a "
+            "solution before ending the session."
+        ],
+        staff_view=_LLMStaffView(
+            summary=(
+                "The trainee ended the session before dealing with the "
+                "customer's problem, so there was nothing to assess."
+            ),
+            rationales={d: staff_reason for d in SkillDimension},
+            improvements=[
+                "The trainee should stay in the conversation until the "
+                "customer's problem is handled."
+            ],
+            recommendations=[
+                "The trainee should find out what the customer needs and work "
+                "towards a solution before ending the session."
+            ],
+        ),
+    )
 
 
 def _empty_evaluation() -> _LLMEvaluation:

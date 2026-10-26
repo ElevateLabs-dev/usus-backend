@@ -67,8 +67,8 @@ class ScenarioProgress(BaseModel):
     """The signed-in user's own history with a scenario."""
 
     status: str = Field(
-        description="'new' (never tried), 'in_progress' (a session is open) or "
-        "'completed' (at least one evaluated session)"
+        description="'new' (never tried), 'in_progress' (tried but not passed "
+        "yet) or 'completed' (passed: best score 60 or more)"
     )
     attempts: int = Field(description="Sessions started for this scenario")
     best_score: Optional[int] = Field(description="Best overall score, 0-100")
@@ -87,6 +87,13 @@ class ScenarioSummary(BaseModel):
     skills: list[SkillRef] = Field(description="Skills this scenario tests")
     estimated_minutes: int
     progress: ScenarioProgress
+    locked: bool = Field(
+        default=False,
+        description="True when the trainee has not unlocked this level yet",
+    )
+    locked_reason: Optional[str] = Field(
+        default=None, description="What the trainee must do to unlock it"
+    )
 
 
 class CustomerProfile(BaseModel):
