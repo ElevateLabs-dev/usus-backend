@@ -25,7 +25,7 @@ from src.domains.scenarios.schemas import (
     ScenarioWrite,
     SkillRef,
 )
-from src.domains.simulations.models import Session
+from src.domains.simulations.models import Session, has_activity
 
 _DIFFICULTY_ORDER = {
     DifficultyLevel.BEGINNER: 0,
@@ -132,7 +132,11 @@ class ScenarioService:
                 EvaluationResult.overall_score,
             )
             .outerjoin(EvaluationResult, EvaluationResult.session_id == Session.id)
-            .where(Session.tenant_id == tenant_id, Session.user_id == user_id)
+            .where(
+                Session.tenant_id == tenant_id,
+                Session.user_id == user_id,
+                has_activity(),
+            )
             .order_by(Session.created_at)
         )
 

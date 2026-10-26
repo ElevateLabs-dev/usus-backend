@@ -25,7 +25,7 @@ from src.domains.progress.schemas import (
     TraineeSummary,
 )
 from src.domains.scenarios.models import Scenario
-from src.domains.simulations.models import Session
+from src.domains.simulations.models import Session, has_activity
 from src.domains.users.models import User
 
 
@@ -39,7 +39,9 @@ async def build_report(
     sessions_started = (
         await db.execute(
             select(func.count(Session.id)).where(
-                Session.tenant_id == tenant_id, Session.user_id == user_id
+                Session.tenant_id == tenant_id,
+                Session.user_id == user_id,
+                has_activity(),
             )
         )
     ).scalar_one()
@@ -169,7 +171,7 @@ async def team_overview(db: AsyncSession, tenant_id: uuid.UUID) -> list[TraineeS
             EvaluationResult.overall_score,
         )
         .outerjoin(EvaluationResult, EvaluationResult.session_id == Session.id)
-        .where(Session.tenant_id == tenant_id)
+        .where(Session.tenant_id == tenant_id, has_activity())
         .order_by(Session.created_at)
     )
     scores: dict[uuid.UUID, list[int]] = defaultdict(list)

@@ -569,3 +569,56 @@ async def test_staff_see_trainee_wording_when_staff_view_is_missing(
         headers=manager,
     )
     assert staff.json()["evaluation"]["summary"] == "Solid handling overall."
+
+
+async def test_trainees_only_see_their_own_sessions(client, session_factory):
+    tenant_id = await _make_org(session_factory)
+    async with session_factory() as db:
+        db.add(
+            User(
+                email="colleague@acme.com",
+                hashed_password=hash_password(PASSWORD),
+                role="trainee",
+                tenant_id=tenant_id,
+            )
+        )
+        await db.commit()
+    owner = await _auth(client, "trainee@acme.com")
+    colleague = await _auth(client, "colleague@acme.com")
+
+    session_id = await _play(client, owner, await _scenario_id(client, owner))
+    await client.post(f"/api/v1/simulations/{session_id}/end", headers=owner)
+
+    mine = (await client.get("/api/v1/simulations/", headers=owner)).json()
+    assert [item["id"] for item in mine["items"]] == [session_id]
+
+    # The colleague sees none of it: history, progress, scenario progress,
+    # notifications
+    theirs = (await client.get("/api/v1/simulations/", headers=colleague)).json()
+    assert theirs == {"items": [], "total": 0}
+    progress = (await client.get("/api/v1/progress/me", headers=colleague)).json()
+    assert progress["sessions_completed"] == 0
+    scenarios = (await client.get("/api/v1/scenarios/", headers=colleague)).json()
+    assert all(s["progress"]["attempts"] == 0 for s in scenarios)
+    notes = (await client.get("/api/v1/notifications/", headers=colleague)).json()
+    assert notes["items"] == []
+
+
+async def test_empty_unfinished_sessions_are_hidden(client, session_factory):
+    await _make_org(session_factory)
+    trainee = await _auth(client, "trainee@acme.com")
+    scenario_id = await _scenario_id(client, trainee)
+
+    # Opened, but nothing said: not in history or progress
+    await client.post(
+        "/api/v1/simulations/start", json={"scenario_id": scenario_id}, headers=trainee
+    )
+    history = (await client.get("/api/v1/simulations/", headers=trainee)).json()
+    assert history == {"items": [], "total": 0}
+    scenarios = (await client.get("/api/v1/scenarios/", headers=trainee)).json()
+    assert all(s["progress"]["status"] == "new" for s in scenarios)
+
+    # Once the trainee says something it counts, even before it ends
+    session_id = await _play(client, trainee, scenario_id)
+    history = (await client.get("/api/v1/simulations/", headers=trainee)).json()
+    assert [item["id"] for item in history["items"]] == [session_id]

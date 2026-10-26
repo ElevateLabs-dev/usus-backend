@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, exists, or_
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -91,3 +91,17 @@ class Message(TenantAwareBase):
     )
 
     session: Mapped[Session] = relationship()
+
+
+def has_activity():
+    """
+    SQL condition: the session is not an empty, unfinished one.
+
+    Opening the role-play page used to start a session straight away, so
+    trainees have sessions they never used. Those are left out of history
+    and progress.
+    """
+    trainee_spoke = exists().where(
+        Message.session_id == Session.id, Message.role == MessageRole.USER
+    )
+    return or_(Session.status != SessionStatus.IN_PROGRESS, trainee_spoke)

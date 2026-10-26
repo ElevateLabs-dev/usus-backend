@@ -11,7 +11,13 @@ from src.domains.evaluations.models import EvaluationResult
 from src.domains.evaluations.schemas import EvaluationResultDetailResponse
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.schemas import CategoryRef
-from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
+from src.domains.simulations.models import (
+    Message,
+    MessageRole,
+    Session,
+    SessionStatus,
+    has_activity,
+)
 from src.domains.simulations.schemas import (
     HistoryItem,
     HistoryPage,
@@ -32,7 +38,11 @@ def _history_query(tenant_id: uuid.UUID, user_id: uuid.UUID):
         select(Session, Scenario, EvaluationResult.overall_score, message_count)
         .join(Scenario, Scenario.id == Session.scenario_id)
         .outerjoin(EvaluationResult, EvaluationResult.session_id == Session.id)
-        .where(Session.tenant_id == tenant_id, Session.user_id == user_id)
+        .where(
+            Session.tenant_id == tenant_id,
+            Session.user_id == user_id,
+            has_activity(),
+        )
     )
 
 
@@ -75,7 +85,7 @@ async def list_history(
 ) -> HistoryPage:
     query = _history_query(tenant_id, user_id)
     count_query = select(func.count(Session.id)).where(
-        Session.tenant_id == tenant_id, Session.user_id == user_id
+        Session.tenant_id == tenant_id, Session.user_id == user_id, has_activity()
     )
     if scenario_id is not None:
         query = query.where(Session.scenario_id == scenario_id)
