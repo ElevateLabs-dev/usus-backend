@@ -36,7 +36,7 @@ from src.domains.simulations.crud import (
 from src.domains.simulations.crud import (
     session as session_repo,
 )
-from src.domains.simulations.customer import customer_reply
+from src.domains.simulations.customer import customer_reply, stream_customer_reply
 from src.domains.simulations.models import MessageRole, Session, SessionStatus
 from src.domains.simulations.schemas import (
     HistoryPage,
@@ -450,48 +450,56 @@ async def voice_customer_turn(
     scenario = await scenario_repo.get(
         db=db, id=session.scenario_id, tenant_id=session.tenant_id
     )
-    _mood, text = await customer_reply(
-        _simulation_service.llm_provider,
-        scenario,
-        system_prompt + VOICE_INSTRUCTIONS,
-        history,
-        max_tokens=200,
-    )
-    return _chat_completion(text, stream=bool(body.get("stream")))
+    llm = _simulation_service.llm_provider
+    prompt = system_prompt + VOICE_INSTRUCTIONS
+    if body.get("stream"):
+        # Sentence by sentence, so the voice starts speaking sooner.
+        return _chat_stream(
+            stream_customer_reply(llm, scenario, prompt, history, max_tokens=200)
+        )
+    _mood, text = await customer_reply(llm, scenario, prompt, history, max_tokens=200)
+    return _chat_completion(text)
 
 
-def _chat_completion(text: str, stream: bool):
+def _completion_meta() -> dict:
+    return {
+        "id": f"chatcmpl-{uuid_lib.uuid4().hex}",
+        "created": int(time.time()),
+        "model": settings.VAPI_MODEL,
+    }
+
+
+def _chat_completion(text: str) -> dict:
     """The reply in the OpenAI chat-completions format Vapi expects."""
-    completion_id = f"chatcmpl-{uuid_lib.uuid4().hex}"
-    created = int(time.time())
-    model = settings.VAPI_MODEL
-    if not stream:
-        return {
-            "id": completion_id,
-            "object": "chat.completion",
-            "created": created,
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
+    return {
+        **_completion_meta(),
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+
+def _chat_stream(pieces) -> StreamingResponse:
+    """The reply as OpenAI chat-completion chunks (server-sent events)."""
+    meta = _completion_meta()
 
     def chunk(delta: dict, finish: str | None) -> str:
         data = {
-            "id": completion_id,
+            **meta,
             "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
         }
         return f"data: {json.dumps(data)}\n\n"
 
-    def events():
-        yield chunk({"role": "assistant", "content": text}, None)
+    async def events():
+        yield chunk({"role": "assistant", "content": ""}, None)
+        async for piece in pieces:
+            yield chunk({"content": piece}, None)
         yield chunk({}, "stop")
         yield "data: [DONE]\n\n"
 

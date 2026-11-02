@@ -8,7 +8,8 @@ customer never switches roles, whatever the trainee says.
 """
 
 import logging
-from typing import Any
+import re
+from typing import Any, AsyncIterator
 
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.prompts import (
@@ -57,3 +58,73 @@ async def customer_reply(
         logger.warning("Customer reply left its role (attempt %d)", attempt + 1)
 
     return None, STAY_IN_ROLE_REPLY
+
+
+# A sentence is complete once its end mark is followed by a space.
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+
+
+async def stream_customer_reply(
+    llm: LLMProvider,
+    scenario: Scenario | None,
+    system_prompt: str,
+    history: list[dict[str, Any]],
+    max_tokens: int = 200,
+) -> AsyncIterator[str]:
+    """
+    The customer's reply, sentence by sentence as it is generated, so a voice
+    can start speaking early. Each sentence is checked before it is yielded:
+    if the first one leaves the role, the checked reply from customer_reply is
+    used instead; if a later one does, the reply stops there.
+    """
+    messages = [dict(message) for message in history]
+    if messages and scenario is not None:
+        messages[-1]["content"] += f"\n\n{customer_reminder(scenario)}"
+
+    buffer = ""
+    spoken = ""
+    started = False  # past the leading [mood: ...] tag
+    stopped = False  # a sentence left the role
+
+    def checked(sentence: str) -> str | None:
+        """The sentence without mood tags, or None if it leaves the role."""
+        _mood, text = split_mood(sentence)
+        if text and breaks_role(f"{spoken} {text}"):
+            logger.warning("Streamed customer reply left its role")
+            return None
+        return text
+
+    async for piece in llm.stream_response(
+        system_prompt=system_prompt,
+        messages=messages,
+        temperature=0.7,
+        max_tokens=max_tokens,
+    ):
+        buffer += piece
+        if not started:
+            head = buffer.lstrip()
+            if head.startswith("[") and "]" not in head and len(head) < 40:
+                continue  # wait for the whole mood tag
+            started = True
+
+        while match := _SENTENCE_END.search(buffer):
+            sentence, buffer = buffer[: match.start()], buffer[match.end() :]
+            text = checked(sentence)
+            if text is None:
+                stopped = True
+                break
+            if text:
+                yield f"{text} "
+                spoken += f" {text}"
+        if stopped:
+            break
+
+    if not stopped:
+        text = checked(buffer)
+        if text:
+            yield text
+            spoken += f" {text}"
+
+    if not spoken:
+        _mood, text = await customer_reply(llm, scenario, system_prompt, history)
+        yield text
