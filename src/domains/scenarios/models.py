@@ -57,6 +57,8 @@ class Scenario(TenantAwareBase):
         String(255), nullable=True
     )
     customer_emotion: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Voice for voice role-play (see scenarios.voices); None = the default.
+    voice_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     customer_background: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     situation: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True
