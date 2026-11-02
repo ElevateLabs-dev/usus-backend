@@ -85,7 +85,7 @@ def voice_config(voice_id: str | None, mood: str) -> dict:
     return {
         "provider": "11labs",
         "voiceId": voice,
-        "model": "eleven_turbo_v2_5",
+        "model": "eleven_flash_v2_5",  # lowest delay
         "stability": delivery.stability,
         "similarityBoost": 0.75,
         "style": delivery.style,
