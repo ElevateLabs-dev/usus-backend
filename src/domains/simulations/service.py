@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domains.scenarios.crud import CRUDScenario
-from src.domains.scenarios.prompts import build_customer_prompt, customer_reminder
+from src.domains.scenarios.prompts import build_customer_prompt
 from src.domains.simulations.crud import (
     CRUDMessage,
     CRUDSession,
 )
+from src.domains.simulations.customer import customer_reply
 from src.domains.simulations.models import (
     Message,
     MessageRole,
@@ -86,7 +87,11 @@ class SimulationService:
         tenant_id: uuid.UUID,
         session_id: uuid.UUID,
         user_text: str,
-    ) -> Message:
+    ) -> tuple[Message, str | None]:
+        """Save the trainee's message and the customer's reply.
+
+        Returns the reply and the customer's mood after it (or None).
+        """
         session = await self.session_repo.get(
             db=db,
             id=session_id,
@@ -132,18 +137,11 @@ class SimulationService:
             if message.role != MessageRole.SYSTEM
         ]
 
-        # Remind the model who it is right after the agent's latest message,
-        # so the agent cannot talk it out of the customer role. Not stored.
         scenario = await self.scenario_repo.get(
             db=db, id=session.scenario_id, tenant_id=tenant_id
         )
-        if scenario is not None and llm_messages:
-            last = llm_messages[-1]
-            last["content"] = f"{last['content']}\n\n{customer_reminder(scenario)}"
-
-        response_text = await self.llm_provider.generate_response(
-            system_prompt=system_prompt,
-            messages=llm_messages,
+        mood, response_text = await customer_reply(
+            self.llm_provider, scenario, system_prompt, llm_messages
         )
 
         model_msg_in = MessageCreate(
@@ -158,7 +156,7 @@ class SimulationService:
             tenant_id=tenant_id,
         )
 
-        return model_msg
+        return model_msg, mood
 
     async def end_session(
         self,

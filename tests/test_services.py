@@ -130,7 +130,7 @@ async def test_full_simulation_loop(
     assert session.user_id == user_id
 
     # Send Message
-    model_msg = await simulation_service.send_message(
+    model_msg, _mood = await simulation_service.send_message(
         db_session, tenant_id, session.id, "Hello, thanks for calling. How can I help?"
     )
     await simulation_service.send_message(
