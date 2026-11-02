@@ -1,23 +1,28 @@
 """
 Voice role-play with Vapi.
 
-1. start_voice: creates a Vapi assistant for the session from the same customer
-   prompt as text role-play. Only its id goes to the browser, so the hidden
-   scenario details never do.
-2. The browser runs the call with the Vapi Web SDK.
+1. start_voice: creates a Vapi assistant for the session. Only its id goes to
+   the browser, so the hidden scenario details never do.
+2. The browser runs the call with the Vapi Web SDK. For every turn, Vapi asks
+   our voice/llm endpoint for the customer's reply, which uses the same
+   customer prompt and role check as text role-play.
 3. finish_voice: once the call has ended, copies Vapi's transcript into the
    session's messages and ends the session, so it is evaluated like a text
    session.
 """
 
 import asyncio
+import hmac
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.domains.scenarios.models import Scenario
+from src.domains.scenarios.voices import scenario_mood, voice_config
 from src.domains.simulations.crud import message as message_repo
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
 from src.infrastructure.voice.vapi import VapiClient
@@ -42,24 +47,35 @@ _ROLES = {
 }
 
 
+# Vapi sends this header (set on the assistant) with every turn.
+VOICE_TOKEN_HEADER = "x-usus-voice-token"
+
+
 class VoiceError(Exception):
     """The voice call cannot be started or finished."""
 
 
-def assistant_config(session: Session, scenario_name: str, prompt: str) -> dict:
+def assistant_config(
+    session: Session, scenario: Scenario, llm_url: str, token: str
+) -> dict:
+    """
+    The Vapi assistant for a session. Vapi sends every turn to our own
+    endpoint (llm_url), which writes the customer's reply with the role check,
+    so the customer prompt never leaves our server.
+    """
     return {
-        "name": f"Usus {scenario_name}"[:40],
+        "name": f"Usus {scenario.name}"[:40],
         # The trainee answers the call, like in text role-play.
         "firstMessageMode": "assistant-waits-for-user",
         "model": {
-            "provider": "openai",
+            "provider": "custom-llm",
+            "url": llm_url,
             "model": settings.VAPI_MODEL,
-            "messages": [{"role": "system", "content": prompt + VOICE_INSTRUCTIONS}],
+            "headers": {VOICE_TOKEN_HEADER: token},
+            "metadataSendMode": "off",
+            "timeoutSeconds": 20,
         },
-        "voice": {
-            "provider": settings.VAPI_VOICE_PROVIDER,
-            "voiceId": settings.VAPI_VOICE_ID,
-        },
+        "voice": voice_config(scenario.voice_id, scenario_mood(scenario)),
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "en"},
         "maxDurationSeconds": settings.VAPI_MAX_CALL_SECONDS,
         "metadata": {
@@ -70,7 +86,11 @@ def assistant_config(session: Session, scenario_name: str, prompt: str) -> dict:
 
 
 async def start_voice(
-    db: AsyncSession, session: Session, scenario_name: str, vapi: VapiClient
+    db: AsyncSession,
+    session: Session,
+    scenario: Scenario,
+    api_base_url: str,
+    vapi: VapiClient,
 ) -> str:
     """Create (or reuse) the session's Vapi assistant and return its id."""
     if session.status != SessionStatus.IN_PROGRESS:
@@ -78,16 +98,22 @@ async def start_voice(
     if session.voice_assistant_id:
         return session.voice_assistant_id
 
-    messages = await message_repo.get_by_session(
-        db=db, tenant_id=session.tenant_id, session_id=session.id
-    )
-    prompt = next((m.content for m in messages if m.role == MessageRole.SYSTEM), "")
-
+    session.voice_token = secrets.token_urlsafe(32)
+    llm_url = f"{api_base_url.rstrip('/')}/api/v1/simulations/{session.id}/voice/llm"
     session.voice_assistant_id = await vapi.create_assistant(
-        assistant_config(session, scenario_name, prompt)
+        assistant_config(session, scenario, llm_url, session.voice_token)
     )
     await db.commit()
     return session.voice_assistant_id
+
+
+def valid_voice_token(session: Session, token: str | None) -> bool:
+    """Whether a request to the session's voice endpoint comes from its call."""
+    return bool(
+        session.voice_token
+        and token
+        and hmac.compare_digest(session.voice_token, token)
+    )
 
 
 def _transcript(call: dict[str, Any]) -> list[tuple[MessageRole, str]]:
