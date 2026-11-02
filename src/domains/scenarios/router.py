@@ -12,6 +12,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
 from src.core.dependencies import (
     AuthContext,
@@ -23,6 +24,7 @@ from src.core.training import TrainingCategory
 from src.domains.notifications.service import notify_scenario_added
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.models import DifficultyLevel, Scenario
+from src.domains.scenarios.prompts import preview_prompt
 from src.domains.scenarios.schemas import (
     CategoryResponse,
     ScenarioBrief,
@@ -30,8 +32,11 @@ from src.domains.scenarios.schemas import (
     ScenarioPatch,
     ScenarioSummary,
     ScenarioWrite,
+    VoiceOption,
+    VoicePreviewRequest,
 )
 from src.domains.scenarios.service import ScenarioNameTakenError, ScenarioService
+from src.domains.scenarios.voices import VOICES, scenario_mood, voice_config
 
 _scenario_service = ScenarioService(repository=scenario_repo)
 
@@ -81,6 +86,50 @@ async def _locked_levels(
     if ctx.role != UserRole.TRAINEE:
         return {}
     return await _scenario_service.locked_levels(db, tenant_id, progress)
+
+
+@router.get(
+    "/voices",
+    response_model=list[VoiceOption],
+    summary="Voices for voice role-play",
+    description="The voices a scenario can use (`voice_id`).",
+    responses=_EDITOR_ERRORS,
+)
+async def list_voices(ctx: _Editor):
+    return [VoiceOption(id=v.id, name=v.name, gender=v.gender) for v in VOICES]
+
+
+@router.post(
+    "/voice-preview",
+    summary="Hear a voice before saving a scenario",
+    description=(
+        "**Company admin / manager only.** Returns a short Vapi assistant "
+        "configuration: pass it to `vapi.start()` in the Vapi Web SDK and the "
+        "customer introduces their problem in the chosen voice and emotion "
+        "(up to 45 seconds)."
+    ),
+    responses=_EDITOR_ERRORS,
+)
+async def voice_preview(body: VoicePreviewRequest, ctx: _Editor) -> dict:
+    sample = Scenario(
+        name="Voice preview",
+        description=body.description or "",
+        persona=body.persona,
+        customer_name=body.customer_name,
+        customer_emotion=body.customer_emotion,
+    )
+    return {
+        "name": "Usus voice preview",
+        "firstMessageMode": "assistant-speaks-first-with-model-generated-message",
+        "model": {
+            "provider": "openai",
+            "model": settings.VAPI_MODEL,
+            "messages": [{"role": "system", "content": preview_prompt(sample)}],
+        },
+        "voice": voice_config(body.voice_id, scenario_mood(sample)),
+        "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "en"},
+        "maxDurationSeconds": 45,
+    }
 
 
 @router.get(

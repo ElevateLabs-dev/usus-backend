@@ -81,10 +81,12 @@ class Settings(BaseSettings):
     # text role-play is available. This is the private key; the frontend uses
     # the public one.
     VAPI_API_KEY: Optional[str] = None
-    VAPI_VOICE_PROVIDER: str = "vapi"
-    VAPI_VOICE_ID: str = "Elliot"
     VAPI_MODEL: str = "gpt-4.1-mini"
     VAPI_MAX_CALL_SECONDS: int = 900
+    # Public address of this API, which Vapi calls for every voice turn
+    # (e.g. https://usus-api.onrender.com). Optional: by default the address
+    # the browser's request came to is used.
+    PUBLIC_API_URL: Optional[str] = None
 
     # AWS Storage
     AWS_ACCESS_KEY_ID: Optional[str] = None

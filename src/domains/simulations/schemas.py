@@ -97,6 +97,11 @@ class VoiceEndRequest(BaseModel):
 class SendMessageResponse(BaseModel):
     user_message: MessageResponse
     ai_reply: MessageResponse
+    mood: str | None = Field(
+        default=None,
+        description="The customer's mood after this reply: angry, frustrated, "
+        "anxious, sad, calm or satisfied",
+    )
 
 
 # ---------------------------------------------------------------------------

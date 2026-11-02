@@ -1,9 +1,23 @@
+import json
+import time
+import uuid as uuid_lib
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
 from src.core.dependencies import AuthContext, UserRole, get_auth_context
 from src.domains.evaluations.crud import (
@@ -22,6 +36,7 @@ from src.domains.simulations.crud import (
 from src.domains.simulations.crud import (
     session as session_repo,
 )
+from src.domains.simulations.customer import customer_reply
 from src.domains.simulations.models import MessageRole, Session, SessionStatus
 from src.domains.simulations.schemas import (
     HistoryPage,
@@ -35,9 +50,12 @@ from src.domains.simulations.schemas import (
 )
 from src.domains.simulations.service import SimulationService
 from src.domains.simulations.voice import (
+    VOICE_INSTRUCTIONS,
+    VOICE_TOKEN_HEADER,
     VoiceError,
     save_voice_transcript,
     start_voice,
+    valid_voice_token,
 )
 from src.infrastructure.llm.factory import get_llm_provider
 from src.infrastructure.voice.vapi import VapiClient, VapiError
@@ -191,7 +209,7 @@ async def send_message(
     tenant_id = session.tenant_id
 
     try:
-        ai_reply = await _simulation_service.send_message(
+        ai_reply, mood = await _simulation_service.send_message(
             db=db,
             tenant_id=tenant_id,
             session_id=session_id,
@@ -225,6 +243,7 @@ async def send_message(
     return SendMessageResponse(
         user_message=user_message,
         ai_reply=ai_reply,
+        mood=mood,
     )
 
 
@@ -309,6 +328,7 @@ async def end_simulation(
 )
 async def start_voice_call(
     session_id: UUID,
+    request: Request,
     ctx: Annotated[AuthContext, Depends(get_auth_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -321,9 +341,11 @@ async def start_voice_call(
     scenario = await scenario_repo.get(
         db=db, id=session.scenario_id, tenant_id=session.tenant_id
     )
+    if scenario is None:
+        raise HTTPException(status_code=404, detail="Scenario not found")
     try:
         assistant_id = await start_voice(
-            db, session, scenario.name if scenario else "Customer", _vapi
+            db, session, scenario, _public_api_url(request), _vapi
         )
     except VoiceError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -373,6 +395,107 @@ async def end_voice_call(
                 detail="Could not fetch the call. Please try again.",
             )
     return await _end_and_evaluate(db, session, background_tasks)
+
+
+def _public_api_url(request: Request) -> str:
+    """Where Vapi can reach this API: PUBLIC_API_URL, or the address this
+    request came to (HTTPS unless it is a local address)."""
+    if settings.PUBLIC_API_URL:
+        return settings.PUBLIC_API_URL
+    base = str(request.base_url).rstrip("/")
+    if request.url.hostname not in ("localhost", "127.0.0.1", "testserver", "test"):
+        base = "https://" + base.split("://", 1)[-1]
+    return base
+
+
+@router.post(
+    "/{session_id}/voice/llm/chat/completions",
+    include_in_schema=False,
+)
+async def voice_customer_turn(
+    session_id: UUID,
+    body: dict,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: Annotated[str | None, Header(alias=VOICE_TOKEN_HEADER)] = None,
+):
+    """
+    Called by Vapi (not the browser) for every turn of a voice call, in the
+    OpenAI chat-completions format. Replies as the customer using the
+    session's own prompt, with the same role check as text role-play. Vapi's
+    system message is ignored.
+    """
+    session = await db.get(Session, session_id)
+    if session is None or not valid_voice_token(session, token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+
+    stored = await message_repo.get_by_session(
+        db=db, tenant_id=session.tenant_id, session_id=session.id
+    )
+    system_prompt = next(
+        (m.content for m in stored if m.role == MessageRole.SYSTEM), ""
+    )
+    history = [
+        {
+            "role": "user" if item.get("role") == "user" else "model",
+            "content": str(item.get("content") or ""),
+        }
+        for item in body.get("messages") or []
+        if item.get("role") in ("user", "assistant") and item.get("content")
+    ]
+    if not history or history[-1]["role"] != "user":
+        history.append({"role": "user", "content": "(The agent is silent.)"})
+
+    scenario = await scenario_repo.get(
+        db=db, id=session.scenario_id, tenant_id=session.tenant_id
+    )
+    _mood, text = await customer_reply(
+        _simulation_service.llm_provider,
+        scenario,
+        system_prompt + VOICE_INSTRUCTIONS,
+        history,
+        max_tokens=200,
+    )
+    return _chat_completion(text, stream=bool(body.get("stream")))
+
+
+def _chat_completion(text: str, stream: bool):
+    """The reply in the OpenAI chat-completions format Vapi expects."""
+    completion_id = f"chatcmpl-{uuid_lib.uuid4().hex}"
+    created = int(time.time())
+    model = settings.VAPI_MODEL
+    if not stream:
+        return {
+            "id": completion_id,
+            "object": "chat.completion",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    def chunk(delta: dict, finish: str | None) -> str:
+        data = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+        }
+        return f"data: {json.dumps(data)}\n\n"
+
+    def events():
+        yield chunk({"role": "assistant", "content": text}, None)
+        yield chunk({}, "stop")
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @router.get(

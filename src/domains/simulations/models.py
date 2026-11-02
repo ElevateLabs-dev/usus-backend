@@ -61,6 +61,8 @@ class Session(TenantAwareBase):
         String(64), nullable=True
     )
     voice_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Secret Vapi sends with each turn of this session's call.
+    voice_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     scenario: Mapped[Scenario] = relationship()
 

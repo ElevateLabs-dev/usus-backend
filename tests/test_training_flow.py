@@ -58,6 +58,8 @@ class FakeLLM(LLMProvider):
         self.evaluations: list[str] = []
         self.evaluation_calls = 0
         self.customer_prompts: list[str] = []
+        # Queued customer replies; the fixed reply once it is empty
+        self.customer_replies: list[str] = []
 
     async def generate_response(
         self, system_prompt, messages, temperature=0.7, max_tokens=1024, json_mode=False
@@ -66,7 +68,9 @@ class FakeLLM(LLMProvider):
             self.evaluation_calls += 1
             return self.evaluations.pop(0) if self.evaluations else evaluation_json()
         self.customer_prompts.append(system_prompt)
-        self.customer_messages = messages
+        self.customer_messages = [dict(m) for m in messages]
+        if self.customer_replies:
+            return self.customer_replies.pop(0)
         return "I'm still upset about this."
 
 

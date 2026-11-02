@@ -2,10 +2,11 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.training import SkillDimension, TrainingCategory
 from src.domains.scenarios.models import CustomerPersona, DifficultyLevel
+from src.domains.scenarios.voices import VOICE_IDS
 
 
 class ImportantInformation(BaseModel):
@@ -25,6 +26,7 @@ class ScenarioBase(BaseModel):
     customer_name: Optional[str] = None
     customer_personality: Optional[str] = None
     customer_emotion: Optional[str] = None
+    voice_id: Optional[str] = None
     customer_background: Optional[str] = None
     situation: Optional[str] = None
     customer_goal: Optional[str] = None
@@ -136,6 +138,11 @@ class ScenarioWrite(BaseModel):
     customer_name: Optional[str] = Field(default=None, max_length=255)
     customer_personality: Optional[str] = Field(default=None, max_length=255)
     customer_emotion: Optional[str] = Field(default=None, max_length=255)
+    voice_id: Optional[str] = Field(
+        default=None,
+        description="Voice for voice role-play, from GET /scenarios/voices "
+        "(empty = the default voice)",
+    )
     customer_background: Optional[str] = None
     situation: str = Field(min_length=10, description="What happened")
     customer_goal: Optional[str] = Field(
@@ -162,6 +169,11 @@ class ScenarioWrite(BaseModel):
         description="Hidden from trainees: optional hand-written AI customer "
         "instructions. Leave empty to build them from the fields above.",
     )
+
+    @field_validator("voice_id")
+    @classmethod
+    def _check_voice(cls, value: Optional[str]) -> Optional[str]:
+        return _known_voice(value)
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -200,6 +212,12 @@ class ScenarioWrite(BaseModel):
     )
 
 
+def _known_voice(value: Optional[str]) -> Optional[str]:
+    if value is not None and value not in VOICE_IDS:
+        raise ValueError("Unknown voice; choose one from GET /scenarios/voices")
+    return value
+
+
 class ScenarioPatch(BaseModel):
     """Edit a scenario: send only the fields to change."""
 
@@ -213,6 +231,7 @@ class ScenarioPatch(BaseModel):
     customer_name: Optional[str] = Field(default=None, max_length=255)
     customer_personality: Optional[str] = Field(default=None, max_length=255)
     customer_emotion: Optional[str] = Field(default=None, max_length=255)
+    voice_id: Optional[str] = None
     customer_background: Optional[str] = None
     situation: Optional[str] = Field(default=None, min_length=10)
     customer_goal: Optional[str] = None
@@ -224,6 +243,11 @@ class ScenarioPatch(BaseModel):
     is_archived: Optional[bool] = Field(
         default=None, description="false restores an archived scenario"
     )
+
+    @field_validator("voice_id")
+    @classmethod
+    def _check_voice(cls, value: Optional[str]) -> Optional[str]:
+        return _known_voice(value)
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -251,3 +275,24 @@ class ScenarioResponse(ScenarioBase):
     tenant_id: UUID
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class VoiceOption(BaseModel):
+    id: str
+    name: str
+    gender: str
+
+
+class VoicePreviewRequest(BaseModel):
+    """The scenario fields that shape how the customer sounds."""
+
+    voice_id: Optional[str] = None
+    persona: CustomerPersona = CustomerPersona.FRUSTRATED
+    customer_name: Optional[str] = Field(default=None, max_length=255)
+    customer_emotion: Optional[str] = Field(default=None, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("voice_id")
+    @classmethod
+    def _check_voice(cls, value: Optional[str]) -> Optional[str]:
+        return _known_voice(value)
