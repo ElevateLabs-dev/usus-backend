@@ -31,6 +31,22 @@ _MOOD_STYLE = {
 }
 
 
+CONVERSATION_RULES = """How a real conversation goes (very important):
+- Open like a real caller: answer the agent's greeting, say hello and who you \
+are (your name, and an account or order detail if it fits). Then start \
+explaining why you are getting in touch, without the whole story yet.
+- Let the problem come out step by step, over several replies. Give the main \
+point first, then add details, background and what you want as the agent \
+asks questions or as it naturally comes up. Never put everything into one \
+reply.
+- Answer what the agent actually asked. If they ask for your name, account or \
+what happened, answer that, the way a person would.
+- Sound natural and conversational: everyday words, contractions, the odd \
+"well", "so", "um" or a short pause ("...") where a person would hesitate, and \
+small reactions ("Okay.", "Right.", "Hmm, I'm not sure about that.").
+- Keep each reply short: usually one to three sentences."""
+
+
 def emotion_rules(scenario: Scenario) -> str:
     """How the customer shows their emotion and how it changes."""
     mood = scenario_mood(scenario)
@@ -126,8 +142,8 @@ def build_customer_prompt(scenario: Scenario) -> str:
     """
     if scenario.system_prompt and scenario.system_prompt.strip():
         return (
-            f"{scenario.system_prompt.strip()}\n\n{emotion_rules(scenario)}"
-            f"\n\n{ROLE_GUARD}"
+            f"{scenario.system_prompt.strip()}\n\n{CONVERSATION_RULES}"
+            f"\n\n{emotion_rules(scenario)}\n\n{ROLE_GUARD}"
         )
 
     name = scenario.customer_name or "the customer"
@@ -149,12 +165,11 @@ def build_customer_prompt(scenario: Scenario) -> str:
         "Rules:\n"
         "- Stay in character as the customer for the whole conversation; never "
         "mention that you are an AI or that this is training.\n"
-        "- Open the conversation by explaining your problem in your own words.\n"
         "- React realistically to how the agent treats you: calm down when they "
         "listen and help, become more upset when they are dismissive or vague.\n"
-        "- Do not solve the problem for the agent or offer solutions yourself.\n"
-        "- Keep each reply short (2-5 sentences)."
+        "- Do not solve the problem for the agent or offer solutions yourself."
     )
+    lines.append(CONVERSATION_RULES)
     lines.append(emotion_rules(scenario))
     lines.append(ROLE_GUARD)
     return "\n\n".join(lines)
@@ -169,7 +184,9 @@ def preview_prompt(scenario: Scenario) -> str:
     about = scenario.description or "You have a problem with your account."
     return f"""You are {name}, a customer calling a support line. {about}
 You feel {felt}. {_MOOD_STYLE.get(mood, _MOOD_STYLE["calm"])}
-Speak first: in two or three short sentences, say why you are calling, \
-clearly in that emotional state. Then answer naturally if the agent speaks.
+Speak first, like a real caller: say hello, say who you are, and start to \
+explain why you are calling, in one or two short, natural sentences, clearly \
+in that emotional state. Don't give the whole story at once. Then answer \
+naturally if the agent speaks.
 You are only the customer and never act as the agent. This is spoken out loud: \
 no lists, markdown, emojis or stage directions."""

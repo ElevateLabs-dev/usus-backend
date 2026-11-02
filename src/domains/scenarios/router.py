@@ -24,7 +24,7 @@ from src.core.training import TrainingCategory
 from src.domains.notifications.service import notify_scenario_added
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.models import DifficultyLevel, Scenario
-from src.domains.scenarios.prompts import preview_prompt
+from src.domains.scenarios.prompts import breaks_role, preview_prompt
 from src.domains.scenarios.schemas import (
     CategoryResponse,
     ScenarioBrief,
@@ -37,6 +37,8 @@ from src.domains.scenarios.schemas import (
 )
 from src.domains.scenarios.service import ScenarioNameTakenError, ScenarioService
 from src.domains.scenarios.voices import VOICES, scenario_mood, voice_config
+from src.infrastructure.llm.base import LLMProvider
+from src.infrastructure.llm.factory import get_llm_provider
 
 _scenario_service = ScenarioService(repository=scenario_repo)
 
@@ -99,6 +101,17 @@ async def list_voices(ctx: _Editor):
     return [VoiceOption(id=v.id, name=v.name, gender=v.gender) for v in VOICES]
 
 
+_preview_llm_provider: LLMProvider | None = None
+
+
+def _preview_llm() -> LLMProvider:
+    """The LLM that writes preview opening lines (swapped out in tests)."""
+    global _preview_llm_provider
+    if _preview_llm_provider is None:
+        _preview_llm_provider = get_llm_provider()
+    return _preview_llm_provider
+
+
 @router.post(
     "/voice-preview",
     summary="Hear a voice before saving a scenario",
@@ -118,13 +131,32 @@ async def voice_preview(body: VoicePreviewRequest, ctx: _Editor) -> dict:
         customer_name=body.customer_name,
         customer_emotion=body.customer_emotion,
     )
+    prompt = preview_prompt(sample)
+
+    # Write the opening line now, so the voice speaks the moment the call
+    # connects. If that fails, Vapi writes it during the call instead.
+    try:
+        opening = await _preview_llm().generate_response(
+            system_prompt=prompt,
+            messages=[{"role": "user", "content": "(The call connects.)"}],
+            temperature=0.8,
+            max_tokens=120,
+        )
+    except Exception:
+        opening = ""
+    first_message = (
+        {"firstMessageMode": "assistant-speaks-first", "firstMessage": opening}
+        if opening and not breaks_role(opening)
+        else {"firstMessageMode": "assistant-speaks-first-with-model-generated-message"}
+    )
+
     return {
         "name": "Usus voice preview",
-        "firstMessageMode": "assistant-speaks-first-with-model-generated-message",
+        **first_message,
         "model": {
             "provider": "openai",
             "model": settings.VAPI_MODEL,
-            "messages": [{"role": "system", "content": preview_prompt(sample)}],
+            "messages": [{"role": "system", "content": prompt}],
         },
         "voice": voice_config(body.voice_id, scenario_mood(sample)),
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "en"},

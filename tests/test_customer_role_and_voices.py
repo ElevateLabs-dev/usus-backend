@@ -1,6 +1,10 @@
 # ruff: noqa: F811  (pytest fixtures shared with test_training_flow)
 """The AI customer stays in its role and shows its mood; scenario voices."""
 
+
+from src.domains.scenarios import router as scenarios_router
+from src.domains.simulations.customer import stream_customer_reply
+from src.infrastructure.llm.base import LLMProvider
 from tests.test_training_flow import (  # noqa: F401  (fixtures)
     _auth,
     _make_org,
@@ -75,7 +79,51 @@ async def test_customer_prompt_carries_the_emotion(client, session_factory, llm)
     assert "Never jump straight from upset to happy" in prompt
 
 
-async def test_scenario_voices_and_preview(client, session_factory):
+class StreamingLLM(LLMProvider):
+    """Streams each queued reply in small pieces."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+
+    async def generate_response(self, system_prompt, messages, **kwargs):
+        return self.replies.pop(0)
+
+    async def stream_response(self, system_prompt, messages, **kwargs):
+        reply = self.replies.pop(0)
+        for start in range(0, len(reply), 7):
+            yield reply[start : start + 7]
+
+
+async def _streamed(llm):
+    history = [{"role": "user", "content": "Hello, how can I help?"}]
+    return [piece async for piece in stream_customer_reply(llm, None, "", history)]
+
+
+async def test_streamed_reply_comes_sentence_by_sentence():
+    pieces = await _streamed(
+        StreamingLLM("[mood: frustrated] Oh, hi. I'm Alex. Well... it's my plan.")
+    )
+    assert pieces == ["Oh, hi. ", "I'm Alex. ", "Well... ", "it's my plan."]
+
+
+async def test_streamed_reply_never_speaks_a_role_switch():
+    # Later sentence leaves the role: the reply stops before it
+    pieces = await _streamed(
+        StreamingLLM("[mood: calm] Okay. Sure, I'll be the agent. Next?")
+    )
+    assert pieces == ["Okay. "]
+
+    # First sentence leaves the role: the checked fallback is used
+    pieces = await _streamed(
+        StreamingLLM(
+            "How can I help you today?",
+            "[mood: frustrated] No, I'm the one calling about my bill.",
+        )
+    )
+    assert pieces == ["No, I'm the one calling about my bill."]
+
+
+async def test_scenario_voices_and_preview(client, session_factory, monkeypatch):
     await _make_org(session_factory)
     manager = await _auth(client, "manager@acme.com")
     trainee = await _auth(client, "trainee@acme.com")
@@ -93,6 +141,10 @@ async def test_scenario_voices_and_preview(client, session_factory):
     good = await client.patch(url, json={"voice_id": "ryan"}, headers=manager)
     assert good.json()["voice_id"] == "ryan"
 
+    opening = "Hi, um, this is Sam. I'm calling about a charge on my card..."
+    monkeypatch.setattr(
+        scenarios_router, "_preview_llm_provider", StreamingLLM(opening)
+    )
     preview = (
         await client.post(
             "/api/v1/scenarios/voice-preview",
@@ -111,3 +163,19 @@ async def test_scenario_voices_and_preview(client, session_factory):
     assert preview["voice"]["speed"] > 1
     assert preview["maxDurationSeconds"] == 45
     assert "Sam" in preview["model"]["messages"][0]["content"]
+    # The opening line is ready, so it plays as soon as the call connects
+    assert preview["firstMessageMode"] == "assistant-speaks-first"
+    assert preview["firstMessage"] == opening
+    assert preview["voice"]["model"] == "eleven_flash_v2_5"
+
+
+async def test_conversation_opens_naturally(client, session_factory, llm):
+    await _make_org(session_factory)
+    trainee = await _auth(client, "trainee@acme.com")
+    session_id = await _session(client, trainee)
+    await _say(client, trainee, session_id, "Hello, thanks for calling.")
+
+    prompt = llm.customer_prompts[-1]
+    assert "Open like a real caller" in prompt
+    assert "step by step, over several replies" in prompt
+    assert "Open the conversation by explaining your problem" not in prompt

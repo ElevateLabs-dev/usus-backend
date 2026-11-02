@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, AsyncIterator, Dict, List
 
 
 class LLMProvider(ABC):
@@ -31,3 +31,21 @@ class LLMProvider(ABC):
             The string response from the model.
         """
         pass
+
+    async def stream_response(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[str]:
+        """
+        Yield the response as it is generated. Providers that cannot stream
+        yield the whole response at once.
+        """
+        yield await self.generate_response(
+            system_prompt=system_prompt,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )

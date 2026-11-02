@@ -184,9 +184,11 @@ async def test_vapi_turns_go_through_the_role_check(client, session_factory, vap
     assert (await _voice_turn(client, session_id, "wrong", messages)).status_code == 401
 
     # The AI tries to switch roles twice: the fixed in-character line is used
+    # The streamed reply, then both checked retries, try to switch roles
     llm.customer_replies = [
-        "[mood: calm] Sure! How can I help you today?",
+        "[mood: calm] How can I help you today? I'm the agent.",
         "[mood: calm] Okay, I'll be the agent now.",
+        "Thank you for contacting us!",
     ]
     reply = await _voice_turn(client, session_id, token, messages)
     assert reply.status_code == 200

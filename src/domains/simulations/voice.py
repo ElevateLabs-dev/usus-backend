@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.voices import scenario_mood, voice_config
-from src.domains.simulations.crud import message as message_repo
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
 from src.infrastructure.voice.vapi import VapiClient
 
@@ -33,6 +32,8 @@ VOICE_INSTRUCTIONS = """
 
 This conversation is a live phone call, spoken out loud.
 - Reply in one to three short sentences, the way people talk on the phone.
+- Start each reply with a short reaction of a few words ("Oh, okay.", "Right, \
+so...", "Hmm.") before you say more, like a person thinking out loud.
 - Never use lists, markdown, emojis or stage directions.
 - Do not end the call yourself; keep going until the trainee hangs up."""
 

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, AsyncIterator, Dict, List
 
 from openai import AsyncOpenAI
 
@@ -33,6 +33,36 @@ class OpenAIProvider(LLMProvider):
         """
         Generate a response using OpenAI chat models.
         """
+        kwargs = self._request(system_prompt, messages, temperature, max_tokens)
+
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = await self.client.chat.completions.create(**kwargs)
+
+        return (response.choices[0].message.content or "").strip()
+
+    async def stream_response(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[str]:
+        """Yield the response text as OpenAI generates it."""
+        kwargs = self._request(system_prompt, messages, temperature, max_tokens)
+        stream = await self.client.chat.completions.create(**kwargs, stream=True)
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    def _request(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+    ) -> Dict[str, Any]:
         formatted_messages: List[Dict[str, str]] = []
 
         if system_prompt.strip():
@@ -61,9 +91,4 @@ class OpenAIProvider(LLMProvider):
         if not self.model.startswith(_FIXED_TEMPERATURE_PREFIXES):
             kwargs["temperature"] = temperature
 
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-
-        response = await self.client.chat.completions.create(**kwargs)
-
-        return (response.choices[0].message.content or "").strip()
+        return kwargs
