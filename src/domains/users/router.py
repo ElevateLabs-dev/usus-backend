@@ -7,6 +7,8 @@ temporary password and must replace it on first sign-in
 (see POST /auth/change-password).
 """
 
+import logging
+import uuid
 from typing import Annotated
 from uuid import UUID
 
@@ -44,6 +46,7 @@ from src.domains.users.schemas import (
     TraineeCreate,
     UserInvite,
 )
+from src.infrastructure.storage.r2 import R2Storage, StorageError
 
 # Session factory used by the background invite task (swapped out in tests).
 _session_factory = AsyncSessionLocal
@@ -52,6 +55,8 @@ _MAX_UPLOAD_BYTES = 2_000_000  # 2 MB is far more than 500 rows of email,name
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users & Trainees"])
+
+logger = logging.getLogger("usus.users")
 
 _OrgStaff = Annotated[
     AuthContext,
@@ -142,6 +147,118 @@ async def get_me(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return user
+
+
+# Profile pictures: what we accept, by the file's first bytes.
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_AVATAR_TYPES = {
+    b"\xff\xd8\xff": ("image/jpeg", "jpg"),
+    b"\x89PNG": ("image/png", "png"),
+}
+
+# Swapped out in tests.
+_storage = R2Storage()
+
+
+def _image_type(data: bytes) -> tuple[str, str] | None:
+    """(content type, extension) of a JPEG, PNG or WebP image, else None."""
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    for magic, kind in _AVATAR_TYPES.items():
+        if data.startswith(magic):
+            return kind
+    return None
+
+
+@router.put(
+    "/me/avatar",
+    response_model=OrgUserRead,
+    summary="Upload your profile picture",
+    description=(
+        "Send the image as multipart form field `file`: JPEG, PNG or WebP, up to "
+        "2 MB. Returns your profile with `avatar_url`."
+    ),
+    responses={
+        400: {"description": "Not a JPEG, PNG or WebP image, or too large"},
+        401: _STAFF_ERRORS[401],
+        503: {"description": "File storage is not configured"},
+    },
+)
+async def upload_avatar(
+    file: UploadFile,
+    ctx: Annotated[AuthContext, Depends(get_auth_context_allow_password_change)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not _storage.configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Profile pictures are not available yet",
+        )
+    data = await file.read(_MAX_AVATAR_BYTES + 1)
+    if len(data) > _MAX_AVATAR_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The image must be 2 MB or smaller",
+        )
+    kind = _image_type(data)
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload a JPEG, PNG or WebP image",
+        )
+    content_type, extension = kind
+
+    user = await user_repo.get(db, id=ctx.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    key = f"avatars/{user.id}/{uuid.uuid4().hex}.{extension}"
+    try:
+        await _storage.put(key, data, content_type)
+    except StorageError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not save the image. Please try again.",
+        )
+
+    old_key = user.avatar_key
+    user.avatar_key = key
+    await db.commit()
+    await db.refresh(user)
+    if old_key:
+        await _delete_quietly(old_key)
+    return user
+
+
+@router.delete(
+    "/me/avatar",
+    response_model=OrgUserRead,
+    summary="Remove your profile picture",
+    description="Goes back to the default picture.",
+    responses={401: _STAFF_ERRORS[401]},
+)
+async def remove_avatar(
+    ctx: Annotated[AuthContext, Depends(get_auth_context_allow_password_change)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    user = await user_repo.get(db, id=ctx.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    old_key = user.avatar_key
+    user.avatar_key = None
+    await db.commit()
+    await db.refresh(user)
+    if old_key:
+        await _delete_quietly(old_key)
+    return user
+
+
+async def _delete_quietly(key: str) -> None:
+    """A leftover old picture costs almost nothing; never fail over it."""
+    try:
+        await _storage.delete(key)
+    except StorageError:
+        logger.warning("Could not delete old profile picture %s", key)
 
 
 @router.get(

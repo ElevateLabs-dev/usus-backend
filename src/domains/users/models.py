@@ -33,6 +33,8 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Profile picture in R2 storage (see infrastructure/storage/r2.py)
+    avatar_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Org-added users must replace their temporary password on first sign-in.
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False

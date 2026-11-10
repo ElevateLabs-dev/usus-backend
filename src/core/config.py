@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     # the browser's request came to is used.
     PUBLIC_API_URL: Optional[str] = None
 
+    # Cloudflare R2 (profile pictures). Create a bucket and an R2 API token
+    # (Object Read & Write) in the Cloudflare dashboard. R2_PUBLIC_URL is the
+    # bucket's custom domain, or its r2.dev URL while developing. Without
+    # these, profile picture upload is unavailable.
+    R2_ACCOUNT_ID: Optional[str] = None
+    R2_ACCESS_KEY_ID: Optional[str] = None
+    R2_SECRET_ACCESS_KEY: Optional[str] = None
+    R2_BUCKET: Optional[str] = None
+    R2_PUBLIC_URL: Optional[str] = None
+
     # AWS Storage
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
