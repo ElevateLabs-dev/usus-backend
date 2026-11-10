@@ -1,0 +1,19 @@
+{
+  "name": "usus-api-cloudflare",
+  "private": true,
+  "description": "Runs the Usus API on Cloudflare Containers",
+  "type": "module",
+  "scripts": {
+    "cf:check": "tsc -p cloudflare && wrangler deploy --dry-run",
+    "cf:deploy": "wrangler deploy",
+    "cf:logs": "wrangler tail"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261026.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.153.0"
+  }
+}

@@ -71,3 +71,8 @@ Thumbs.db
 # Editor workspace
 # =========================
 USUS-WORKSPACE.code-workspace
+
+# Cloudflare deploy
+node_modules/
+.wrangler/
+.dev.vars

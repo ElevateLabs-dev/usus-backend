@@ -9,3 +9,9 @@ __pycache__
 .mypy_cache
 tests
 docs
+node_modules
+cloudflare
+package.json
+package-lock.json
+wrangler.jsonc
+.wrangler
