@@ -206,3 +206,44 @@ async def test_vapi_turns_go_through_the_role_check(client, session_factory, vap
     assert reply.json()["choices"][0]["message"]["content"] == (
         "Look, I just want to cancel."
     )
+
+
+async def test_unused_prepared_call_is_removed(client, session_factory, vapi):
+    await _make_org(session_factory)
+    trainee = await _auth(client, "trainee@acme.com")
+    session_id = await _start(client, trainee)
+    await client.post(f"/api/v1/simulations/{session_id}/voice", headers=trainee)
+
+    cancelled = await client.post(
+        f"/api/v1/simulations/{session_id}/voice/cancel", headers=trainee
+    )
+    assert cancelled.status_code == 204
+    assert vapi.deleted == ["asst_1"]
+
+    # Its secret no longer works, and a new call can still be prepared
+    turn = await client.post(
+        f"/api/v1/simulations/{session_id}/voice/llm/chat/completions",
+        json={"messages": [{"role": "user", "content": "Hello"}]},
+        headers={
+            "x-usus-voice-token": vapi.assistants[0]["model"]["headers"][
+                "x-usus-voice-token"
+            ]
+        },
+    )
+    assert turn.status_code == 401
+    again = await client.post(
+        f"/api/v1/simulations/{session_id}/voice", headers=trainee
+    )
+    assert again.json() == {"assistant_id": "asst_2"}
+
+    # After a real call, cancelling changes nothing
+    vapi.call_assistant = "asst_2"
+    ended = await client.post(
+        f"/api/v1/simulations/{session_id}/voice/end",
+        json={"call_id": "call_1"},
+        headers=trainee,
+    )
+    assert ended.status_code == 200, ended.text
+    vapi.deleted.clear()
+    await client.post(f"/api/v1/simulations/{session_id}/voice/cancel", headers=trainee)
+    assert vapi.deleted == []

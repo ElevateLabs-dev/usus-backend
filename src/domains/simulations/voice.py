@@ -108,6 +108,21 @@ async def start_voice(
     return session.voice_assistant_id
 
 
+async def cancel_voice(db: AsyncSession, session: Session, vapi: VapiClient) -> None:
+    """Remove the session's Vapi assistant if its call never started (the
+    trainee left the page). Nothing to do once a call has happened."""
+    if not session.voice_assistant_id or session.voice_call_id:
+        return
+    assistant_id = session.voice_assistant_id
+    session.voice_assistant_id = None
+    session.voice_token = None
+    await db.commit()
+    try:
+        await vapi.delete_assistant(assistant_id)
+    except Exception:
+        logger.warning("Could not delete Vapi assistant %s", assistant_id)
+
+
 def valid_voice_token(session: Session, token: str | None) -> bool:
     """Whether a request to the session's voice endpoint comes from its call."""
     return bool(

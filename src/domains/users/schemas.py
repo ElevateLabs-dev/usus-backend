@@ -2,9 +2,10 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 
 from src.core.dependencies import UserRole
+from src.infrastructure.storage.r2 import public_url
 
 
 class UserCreate(BaseModel):
@@ -93,6 +94,13 @@ class OrgUserRead(BaseModel):
         "has not gone out yet"
     )
     created_at: datetime
+    avatar_key: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def avatar_url(self) -> str | None:
+        """The profile picture, or null for the default one."""
+        return public_url(self.avatar_key)
 
     model_config = {"from_attributes": True}
 
