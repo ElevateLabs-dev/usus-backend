@@ -53,6 +53,7 @@ from src.domains.simulations.voice import (
     VOICE_INSTRUCTIONS,
     VOICE_TOKEN_HEADER,
     VoiceError,
+    cancel_voice,
     save_voice_transcript,
     start_voice,
     valid_voice_token,
@@ -355,6 +356,26 @@ async def start_voice_call(
             detail="Could not start the voice call. Please try again.",
         )
     return VoiceStartResponse(assistant_id=assistant_id)
+
+
+@router.post(
+    "/{session_id}/voice/cancel",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Drop a prepared voice call that was never started",
+    description=(
+        "The voice page prepares the call (`POST /simulations/{session_id}/voice`) "
+        "as soon as it opens. If the trainee leaves without calling, this removes "
+        "the unused Vapi assistant. Does nothing once a call has happened."
+    ),
+    responses={**_AUTH_ERRORS, 404: {"description": "Session not found"}},
+)
+async def cancel_voice_call(
+    session_id: UUID,
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    session = await _owned_session(db, ctx, session_id)
+    await cancel_voice(db, session, _vapi)
 
 
 @router.post(
