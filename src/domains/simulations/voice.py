@@ -24,6 +24,7 @@ from src.core.config import settings
 from src.domains.scenarios.models import Scenario
 from src.domains.scenarios.voices import scenario_mood, voice_config
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
+from src.domains.usage.meter import record_voice_call
 from src.infrastructure.voice.vapi import VapiClient
 
 logger = logging.getLogger("usus.voice")
@@ -179,6 +180,7 @@ async def save_voice_transcript(
         for index, (role, text) in enumerate(_transcript(call))
     )
     session.voice_call_id = call_id
+    record_voice_call(db, session.tenant_id, session.id, call)
     await db.commit()
 
     # The assistant was made for this one session.

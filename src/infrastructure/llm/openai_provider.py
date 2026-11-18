@@ -3,6 +3,7 @@ from typing import Any, AsyncIterator, Dict, List
 from openai import AsyncOpenAI
 
 from src.core.config import settings
+from src.domains.usage.meter import record_llm
 from src.infrastructure.llm.base import LLMProvider
 
 # Reasoning models only accept the default temperature and reject custom values.
@@ -39,6 +40,12 @@ class OpenAIProvider(LLMProvider):
             kwargs["response_format"] = {"type": "json_object"}
 
         response = await self.client.chat.completions.create(**kwargs)
+        if response.usage:
+            record_llm(
+                response.model or self.model,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
 
         return (response.choices[0].message.content or "").strip()
 
@@ -51,8 +58,17 @@ class OpenAIProvider(LLMProvider):
     ) -> AsyncIterator[str]:
         """Yield the response text as OpenAI generates it."""
         kwargs = self._request(system_prompt, messages, temperature, max_tokens)
-        stream = await self.client.chat.completions.create(**kwargs, stream=True)
+        stream = await self.client.chat.completions.create(
+            **kwargs, stream=True, stream_options={"include_usage": True}
+        )
         async for chunk in stream:
+            if chunk.usage:
+                # Sent in the last chunk.
+                record_llm(
+                    chunk.model or self.model,
+                    chunk.usage.prompt_tokens,
+                    chunk.usage.completion_tokens,
+                )
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 

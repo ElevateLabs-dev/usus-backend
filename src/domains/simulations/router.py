@@ -58,6 +58,7 @@ from src.domains.simulations.voice import (
     start_voice,
     valid_voice_token,
 )
+from src.domains.usage.meter import usage_scope
 from src.infrastructure.llm.factory import get_llm_provider
 from src.infrastructure.voice.vapi import VapiClient, VapiError
 
@@ -210,12 +211,13 @@ async def send_message(
     tenant_id = session.tenant_id
 
     try:
-        ai_reply, mood = await _simulation_service.send_message(
-            db=db,
-            tenant_id=tenant_id,
-            session_id=session_id,
-            user_text=body.content,
-        )
+        with usage_scope(tenant_id, session_id, "conversation"):
+            ai_reply, mood = await _simulation_service.send_message(
+                db=db,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_text=body.content,
+            )
 
     except ValueError as exc:
         raise HTTPException(
@@ -473,12 +475,23 @@ async def voice_customer_turn(
     )
     llm = _simulation_service.llm_provider
     prompt = system_prompt + VOICE_INSTRUCTIONS
+    tenant_id, session_id = session.tenant_id, session.id
     if body.get("stream"):
         # Sentence by sentence, so the voice starts speaking sooner.
-        return _chat_stream(
-            stream_customer_reply(llm, scenario, prompt, history, max_tokens=200)
+        async def pieces():
+            # The reply is generated while the response streams, after this
+            # function has returned, so the usage scope is set here.
+            with usage_scope(tenant_id, session_id, "voice_conversation"):
+                async for piece in stream_customer_reply(
+                    llm, scenario, prompt, history, max_tokens=200
+                ):
+                    yield piece
+
+        return _chat_stream(pieces())
+    with usage_scope(tenant_id, session_id, "voice_conversation"):
+        _mood, text = await customer_reply(
+            llm, scenario, prompt, history, max_tokens=200
         )
-    _mood, text = await customer_reply(llm, scenario, prompt, history, max_tokens=200)
     return _chat_completion(text)
 
 
