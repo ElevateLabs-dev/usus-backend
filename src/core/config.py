@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     VAPI_API_KEY: Optional[str] = None
     VAPI_MODEL: str = "gpt-4.1-mini"
     VAPI_MAX_CALL_SECONDS: int = 900
+    # A session left this long without activity is ended (and evaluated if
+    # the trainee said anything). Voice sessions wait for the longest call.
+    IDLE_SESSION_MINUTES: int = 30
     # Public address of this API, which Vapi calls for every voice turn
     # (e.g. https://usus-api.onrender.com). Optional: by default the address
     # the browser's request came to is used.

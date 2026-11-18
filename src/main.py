@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -9,6 +12,7 @@ from src.domains.notifications.router import router as notifications_router
 from src.domains.platform.router import router as platform_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
+from src.domains.simulations import idle
 from src.domains.simulations.router import router as simulations_router
 from src.domains.tenants.router import router as organizations_router
 from src.domains.users.router import router as users_router
@@ -58,6 +62,14 @@ OPENAPI_TAGS = [
 ]
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ends sessions the trainee left without ending them.
+    sweep = asyncio.create_task(idle.run_forever())
+    yield
+    sweep.cancel()
+
+
 def create_app() -> FastAPI:
     """Factory function to create the Usus Backend"""
 
@@ -66,6 +78,7 @@ def create_app() -> FastAPI:
         description=API_DESCRIPTION,
         version="0.1.0",
         openapi_tags=OPENAPI_TAGS,
+        lifespan=lifespan,
     )
 
     # SessionMiddleware is required by Starlette-Admin for cookie-based auth sessions.
