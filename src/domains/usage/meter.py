@@ -52,9 +52,12 @@ def usage_scope(
         _scope.reset(token)
 
 
-def record_llm(model: str, input_tokens: int, output_tokens: int) -> None:
-    """Called by the LLM providers after each request. Outside a usage scope
-    (health checks, scripts) nothing is recorded."""
+def record_llm(
+    model: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0
+) -> None:
+    """Called by the LLM providers after each request. input_tokens includes
+    cached_tokens. Outside a usage scope (health checks, scripts) nothing is
+    recorded."""
     scope = _scope.get()
     if scope is None:
         return
@@ -66,7 +69,7 @@ def record_llm(model: str, input_tokens: int, output_tokens: int) -> None:
         model=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        cost_usd=llm_cost(model, input_tokens, output_tokens),
+        cost_usd=llm_cost(model, input_tokens, output_tokens, cached_tokens),
     )
     try:
         task = asyncio.get_running_loop().create_task(_save(record))

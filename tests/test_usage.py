@@ -48,11 +48,24 @@ def metered(monkeypatch, session_factory):
 
 
 def test_llm_cost_uses_the_model_price():
+    # Prices are per 1M tokens
     assert llm_cost("gpt-4.1-mini", 1_000_000, 0) == Decimal("0.40")
+    assert llm_cost("gpt-4.1-mini", 0, 1_000_000) == Decimal("1.60")
     # Dated names use their base model's price, not a shorter prefix's
     assert llm_cost("gpt-4.1-mini-2025-04-14", 1000, 200) == Decimal("0.00072")
     assert llm_cost("gpt-4.1", 0, 1_000_000) == Decimal("8.00")
+    assert llm_cost("gpt-5.4-mini", 1_000_000, 1_000_000) == Decimal("5.25")
+    assert llm_cost("gpt-5", 1_000_000, 0) == Decimal("1.25")
     assert llm_cost("some-new-model", 10, 10) is None
+
+
+def test_cached_input_uses_the_cached_price():
+    # 1M input tokens, 400K of them cached: 600K x $0.40 + 400K x $0.10
+    assert llm_cost("gpt-4.1-mini", 1_000_000, 0, cached_tokens=400_000) == Decimal(
+        "0.28"
+    )
+    # No cached price: every input token at the input price
+    assert llm_cost("o3-pro", 1_000_000, 0, cached_tokens=500_000) == Decimal("20")
 
 
 async def test_requests_outside_a_session_are_not_recorded(
@@ -176,3 +189,30 @@ async def test_admins_see_usage_and_cost(client, outbox, session_factory, metere
         await client.get("/api/v1/organizations/me/usage", headers=trainee)
     ).status_code == 403
     assert acme["id"] != beta["id"]
+
+
+async def test_openai_usage_with_cached_tokens_is_saved(session_factory, monkeypatch):
+    from openai.types import CompletionUsage
+    from openai.types.completion_usage import PromptTokensDetails
+    from sqlalchemy import select
+
+    from src.infrastructure.llm.openai_provider import _record
+
+    monkeypatch.setattr(meter, "_session_factory", session_factory)
+    session_id = uuid.uuid4()
+    usage = CompletionUsage(
+        prompt_tokens=1_000_000,
+        completion_tokens=100_000,
+        total_tokens=1_100_000,
+        prompt_tokens_details=PromptTokensDetails(cached_tokens=400_000),
+    )
+    with meter.usage_scope(uuid.uuid4(), session_id, "conversation"):
+        _record("gpt-4.1-mini-2025-04-14", usage)
+    await meter.drain()
+
+    async with session_factory() as db:
+        record = (await db.execute(select(UsageRecord))).scalar_one()
+    assert record.session_id == session_id
+    assert record.input_tokens == 1_000_000 and record.output_tokens == 100_000
+    # 600K x $0.40 + 400K x $0.10 + 100K x $1.60, per 1M tokens
+    assert record.cost_usd == Decimal("0.44")

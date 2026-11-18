@@ -1,6 +1,7 @@
 from typing import Any, AsyncIterator, Dict, List
 
 from openai import AsyncOpenAI
+from openai.types import CompletionUsage
 
 from src.core.config import settings
 from src.domains.usage.meter import record_llm
@@ -8,6 +9,16 @@ from src.infrastructure.llm.base import LLMProvider
 
 # Reasoning models only accept the default temperature and reject custom values.
 _FIXED_TEMPERATURE_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+
+def _record(model: str, usage: CompletionUsage) -> None:
+    details = usage.prompt_tokens_details
+    record_llm(
+        model,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        cached_tokens=(details.cached_tokens or 0) if details else 0,
+    )
 
 
 class OpenAIProvider(LLMProvider):
@@ -41,11 +52,7 @@ class OpenAIProvider(LLMProvider):
 
         response = await self.client.chat.completions.create(**kwargs)
         if response.usage:
-            record_llm(
-                response.model or self.model,
-                response.usage.prompt_tokens,
-                response.usage.completion_tokens,
-            )
+            _record(response.model or self.model, response.usage)
 
         return (response.choices[0].message.content or "").strip()
 
@@ -64,11 +71,7 @@ class OpenAIProvider(LLMProvider):
         async for chunk in stream:
             if chunk.usage:
                 # Sent in the last chunk.
-                record_llm(
-                    chunk.model or self.model,
-                    chunk.usage.prompt_tokens,
-                    chunk.usage.completion_tokens,
-                )
+                _record(chunk.model or self.model, chunk.usage)
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
