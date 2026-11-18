@@ -537,7 +537,12 @@ def _chat_stream(pieces) -> StreamingResponse:
         yield chunk({}, "stop")
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(events(), media_type="text/event-stream")
+    # Sent as soon as written: no buffering or compression on the way.
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get(

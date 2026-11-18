@@ -180,6 +180,10 @@ async def save_voice_transcript(
         for index, (role, text) in enumerate(_transcript(call))
     )
     session.voice_call_id = call_id
+    reason = call.get("endedReason")
+    if reason != "customer-ended-call":
+        # Anything but the trainee hanging up (an error, a dropped call)
+        logger.warning("Voice call %s ended: %s", call_id, reason)
     record_voice_call(db, session.tenant_id, session.id, call)
     await db.commit()
 
