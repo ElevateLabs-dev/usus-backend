@@ -27,8 +27,12 @@ class VapiClient:
         return bool(self.api_key)
 
     async def _request(
-        self, method: str, path: str, json: dict | None = None
-    ) -> dict[str, Any]:
+        self,
+        method: str,
+        path: str,
+        json: dict | None = None,
+        params: dict | None = None,
+    ) -> Any:
         if not self.api_key:
             raise VapiError("Voice role-play is not configured")
         async with httpx.AsyncClient(
@@ -36,7 +40,7 @@ class VapiClient:
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=self.timeout,
         ) as client:
-            response = await client.request(method, path, json=json)
+            response = await client.request(method, path, json=json, params=params)
         if response.status_code >= 400:
             raise VapiError(f"Vapi {method} {path} failed: {response.status_code}")
         return response.json() if response.content else {}
@@ -50,3 +54,10 @@ class VapiClient:
 
     async def get_call(self, call_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/call/{call_id}")
+
+    async def latest_call(self, assistant_id: str) -> dict[str, Any] | None:
+        """The assistant's most recent call, or None if it never made one."""
+        calls = await self._request(
+            "GET", "/call", params={"assistantId": assistant_id, "limit": 1}
+        )
+        return calls[0] if calls else None
