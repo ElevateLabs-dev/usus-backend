@@ -9,8 +9,8 @@
     {
       "class_name": "UsusApi",
       "image": "./Dockerfile",
-      // 1/4 vCPU, 1 GiB memory, 4 GB disk
-      "instance_type": "basic",
+      // 1 vCPU, 6 GiB memory, 12 GB disk (1/4 vCPU was too slow for voice)
+      "instance_type": "standard-2",
       "max_instances": 1
     }
   ],
