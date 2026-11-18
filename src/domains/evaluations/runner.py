@@ -28,6 +28,7 @@ from src.domains.simulations.crud import (
     session as session_repo,
 )
 from src.domains.simulations.models import MessageRole, SessionStatus
+from src.domains.usage.meter import usage_scope
 from src.infrastructure.llm.base import LLMProvider
 from src.infrastructure.llm.factory import get_llm_provider
 
@@ -114,11 +115,12 @@ async def _evaluate(
         # Saves the evaluation and marks the session EVALUATED in one
         # transaction. A session the trainee never replied in is scored 0
         # without calling the LLM.
-        result = await evaluation_service.evaluate_session(
-            db=db,
-            tenant_id=tenant_id,
-            session=session,
-            messages=session_messages,
-        )
+        with usage_scope(tenant_id, session_id, "evaluation"):
+            result = await evaluation_service.evaluate_session(
+                db=db,
+                tenant_id=tenant_id,
+                session=session,
+                messages=session_messages,
+            )
         await notify_evaluation_ready(db, session_id, result.overall_score)
         return "completed"

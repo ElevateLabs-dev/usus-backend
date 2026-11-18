@@ -6,7 +6,7 @@ manages client organizations.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import AsyncSessionLocal, get_db
@@ -22,6 +22,8 @@ from src.domains.tenants.schemas import (
     OrganizationUpdate,
     StaffUpdate,
 )
+from src.domains.usage.schemas import UsageReport
+from src.domains.usage.service import usage_report
 from src.domains.users import service as users_service
 from src.domains.users.models import User
 from src.domains.users.schemas import InviteResendResponse, OrgUserRead, TraineeCreate
@@ -112,6 +114,27 @@ async def get_my_organization(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     return await service.get_organization_detail(db, ctx.tenant_id)
+
+
+@router.get(
+    "/me/usage",
+    response_model=UsageReport,
+    summary="Your organization's usage and cost",
+    description=(
+        "**Company admin only.** Your organization's sessions started in the "
+        "last `days` days: how long they took and their AI and voice cost."
+    ),
+    responses={
+        401: {"description": "Missing or invalid token"},
+        403: {"description": "Not a company admin"},
+    },
+)
+async def get_my_usage(
+    ctx: _CompanyAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+):
+    return await usage_report(db, days, tenant_id=ctx.tenant_id)
 
 
 @router.patch(

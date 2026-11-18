@@ -4,6 +4,7 @@ import anthropic
 from anthropic.types import TextBlock
 
 from src.core.config import settings
+from src.domains.usage.meter import record_llm
 from src.infrastructure.llm.base import LLMProvider
 
 
@@ -49,6 +50,9 @@ class AnthropicProvider(LLMProvider):
             messages=formatted_messages,
             temperature=temperature,
             max_tokens=max_tokens,
+        )
+        record_llm(
+            self.model, response.usage.input_tokens, response.usage.output_tokens
         )
 
         text_parts: List[str] = [

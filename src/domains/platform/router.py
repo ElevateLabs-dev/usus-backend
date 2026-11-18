@@ -30,6 +30,8 @@ from src.domains.platform.schemas import (
     PlatformSettingsUpdate,
     PlatformStatus,
 )
+from src.domains.usage.schemas import UsageReport
+from src.domains.usage.service import usage_report
 from src.domains.users import service as users_service
 from src.domains.users.schemas import InviteResendResponse, OrgUserRead
 
@@ -244,3 +246,22 @@ async def resend_admin_invite(
 
     background_tasks.add_task(users_service.send_invites, [admin.id], _session_factory)
     return InviteResendResponse(status="sending", email=admin.email)
+
+
+@router.get(
+    "/usage",
+    response_model=UsageReport,
+    summary="Usage and cost",
+    description=(
+        "**Platform admin only.** Sessions started in the last `days` days "
+        "across all organizations: how long they took, the AI (OpenAI) and "
+        "voice (Vapi) cost of each, totals and a breakdown per organization."
+    ),
+    responses=_ERRORS,
+)
+async def get_usage(
+    ctx: _PlatformAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+):
+    return await usage_report(db, days)
