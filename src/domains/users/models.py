@@ -43,10 +43,6 @@ class User(Base):
     invite_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # When the user finished (or skipped) the first-time walkthrough
-    walkthrough_done_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     tenant: Mapped["Tenant | None"] = relationship(
         "Tenant",
         back_populates="users",

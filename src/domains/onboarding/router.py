@@ -1,27 +1,21 @@
 """
-Getting started: the company setup checklist and the first-time walkthrough.
+Getting started: the company setup checklist.
 
 Nothing here blocks the platform; the checklist only shows what is left. Each
 step is ticked off from the organization's data as it gets done, so
 organizations created before the checklist see their real progress too.
 """
 
-from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.dependencies import (
-    AuthContext,
-    UserRole,
-    get_auth_context,
-    require_roles,
-)
+from src.core.dependencies import AuthContext, UserRole, require_roles
 from src.domains.knowledge.service import ready_count
 from src.domains.scenarios.defaults import DEFAULT_SCENARIOS
 from src.domains.scenarios.models import Scenario
@@ -46,10 +40,6 @@ class Checklist(BaseModel):
     steps: list[ChecklistStep]
     completed: int
     total: int
-
-
-class WalkthroughDone(BaseModel):
-    walkthrough_done_at: datetime
 
 
 async def _checklist(db: AsyncSession, tenant: Tenant) -> Checklist:
@@ -118,26 +108,3 @@ async def _tenant(db: AsyncSession, tenant_id: UUID | None) -> Tenant:
 )
 async def get_checklist(ctx: _Staff, db: Annotated[AsyncSession, Depends(get_db)]):
     return await _checklist(db, await _tenant(db, ctx.tenant_id))
-
-
-@router.post(
-    "/walkthrough",
-    response_model=WalkthroughDone,
-    status_code=status.HTTP_200_OK,
-    summary="Finish the walkthrough",
-    description=(
-        "Any user: call when they finish or skip the first-time walkthrough. "
-        "`GET /users/me` then has `walkthrough_done_at`, so it is not shown again."
-    ),
-)
-async def finish_walkthrough(
-    ctx: Annotated[AuthContext, Depends(get_auth_context)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    user = await db.get(User, ctx.user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.walkthrough_done_at is None:
-        user.walkthrough_done_at = datetime.now(timezone.utc)
-        await db.commit()
-    return WalkthroughDone(walkthrough_done_at=user.walkthrough_done_at)

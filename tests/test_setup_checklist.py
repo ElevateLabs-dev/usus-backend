@@ -1,5 +1,5 @@
 # ruff: noqa: F811  (pytest fixtures shared with other tests)
-"""Company setup checklist, company profile/logo and the walkthrough."""
+"""Company setup checklist and company profile/logo."""
 
 from src.domains.tenants import router as tenants_router
 from tests.test_knowledge_base import _admin, _upload, kb, make_docx  # noqa: F401
@@ -92,15 +92,3 @@ async def test_checklist_follows_the_organizations_data(
     removed = await client.delete("/api/v1/organizations/me/logo", headers=admin)
     assert removed.json()["logo_url"] is None
     assert storage.files == {}
-
-
-async def test_walkthrough_is_remembered(client, session_factory):
-    await _make_org(session_factory)
-    trainee = await _auth(client, "trainee@acme.com")
-    me = (await client.get("/api/v1/users/me", headers=trainee)).json()
-    assert me["walkthrough_done_at"] is None
-
-    done = await client.post("/api/v1/onboarding/walkthrough", headers=trainee)
-    assert done.status_code == 200
-    me = (await client.get("/api/v1/users/me", headers=trainee)).json()
-    assert me["walkthrough_done_at"] is not None

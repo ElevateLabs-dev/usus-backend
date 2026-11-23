@@ -22,9 +22,11 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.drop_column('tenants', 'checklist_dismissed_at')
     op.drop_column('tenants', 'launched_at')
+    op.drop_column('users', 'walkthrough_done_at')
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    op.add_column('users', sa.Column('walkthrough_done_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('tenants', sa.Column('launched_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('tenants', sa.Column('checklist_dismissed_at', sa.DateTime(timezone=True), nullable=True))
