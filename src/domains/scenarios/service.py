@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.training import (
     CATEGORY_INFO,
+    SkillDimension,
     TrainingCategory,
     category_name,
     dimension_name,
@@ -40,6 +41,7 @@ _REQUIRED_FIELDS = {
     "difficulty",
     "persona",
     "skills",
+    "metrics",
     "estimated_minutes",
     "important_information",
     "is_archived",
@@ -192,17 +194,21 @@ class ScenarioService:
         scenario: Scenario,
         progress: ScenarioProgress | None,
         locked_reason: str | None = None,
+        metric_names: dict[str, str] | None = None,
     ) -> ScenarioSummary:
-        return ScenarioSummary(**_summary_fields(scenario, progress, locked_reason))
+        return ScenarioSummary(
+            **_summary_fields(scenario, progress, locked_reason, metric_names)
+        )
 
     @staticmethod
     def to_brief(
         scenario: Scenario,
         progress: ScenarioProgress | None,
         locked_reason: str | None = None,
+        metric_names: dict[str, str] | None = None,
     ) -> ScenarioBrief:
         return ScenarioBrief(
-            **_summary_fields(scenario, progress, locked_reason),
+            **_summary_fields(scenario, progress, locked_reason, metric_names),
             customer=CustomerProfile(
                 name=scenario.customer_name,
                 personality=scenario.customer_personality,
@@ -291,7 +297,10 @@ def _summary_fields(
     scenario: Scenario,
     progress: ScenarioProgress | None,
     locked_reason: str | None = None,
+    metric_names: dict[str, str] | None = None,
 ) -> dict:
+    names = metric_names or {d.value: dimension_name(d) for d in SkillDimension}
+    chosen = [key for key in scenario.metrics or [] if key in names]
     category = (
         CategoryRef(id=scenario.category, name=category_name(scenario.category))
         if scenario.category
@@ -307,6 +316,10 @@ def _summary_fields(
         "skills": [
             SkillRef(id=skill, name=dimension_name(skill))
             for skill in scenario.skills or []
+        ],
+        "metrics": [
+            SkillRef(id=key, name=names[key])
+            for key in (chosen or [d.value for d in SkillDimension])
         ],
         "estimated_minutes": scenario.estimated_minutes,
         "progress": progress

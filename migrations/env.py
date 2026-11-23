@@ -20,6 +20,7 @@ import src.domains.platform.models
 import src.domains.notifications.models
 import src.domains.usage.models
 import src.domains.auth.models
+import src.domains.metrics.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
