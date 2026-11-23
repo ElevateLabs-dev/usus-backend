@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from src.admin import setup_admin
 from src.core.config import settings
 from src.domains.auth.router import router as auth_router
+from src.domains.auth.signup import router as signup_router
 from src.domains.evaluations.router import router as evaluations_router
 from src.domains.notifications.router import router as notifications_router
 from src.domains.platform.router import router as platform_router
@@ -26,6 +27,9 @@ customer conversations and get scored feedback.
 2. Send the returned token as `Authorization: Bearer <token>`.
 
 ### Trainee onboarding
+Companies sign up with `POST /api/v1/auth/signup` and confirm the emailed code
+with `POST /api/v1/auth/verify-email`.
+
 Trainees do not sign up themselves. A company admin or manager adds them
 (`/api/v1/users/trainees`, `/bulk`, or an Excel `/import`). Each trainee is
 emailed a temporary password and must call `POST /api/v1/auth/change-password`
@@ -34,7 +38,7 @@ required**.
 """
 
 OPENAPI_TAGS = [
-    {"name": "Auth", "description": "Sign in and change password."},
+    {"name": "Auth", "description": "Company signup, sign in and change password."},
     {
         "name": "Organizations",
         "description": "Platform admins onboard and manage client organizations.",
@@ -87,6 +91,7 @@ def create_app() -> FastAPI:
 
     # Register domain routers
     app.include_router(auth_router)
+    app.include_router(signup_router)
     app.include_router(organizations_router)
     app.include_router(platform_router)
     app.include_router(users_router)

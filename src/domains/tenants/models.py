@@ -19,6 +19,9 @@ class Tenant(Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Answers from the signup form
+    company_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    referral_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     users: Mapped[list["User"]] = relationship(
         "User",
         back_populates="tenant",
