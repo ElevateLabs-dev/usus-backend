@@ -19,6 +19,7 @@ from src.core.security import (
     generate_temporary_password,
     hash_password,
 )
+from src.domains.teams.service import team_names
 from src.domains.tenants.models import Tenant
 from src.domains.users.models import User
 from src.domains.users.schemas import MAX_BULK_TRAINEES, SkippedTrainee, TraineeCreate
@@ -207,17 +208,34 @@ def build_import_template() -> bytes:
     return buffer.getvalue()
 
 
-def _invite_email(user: User, organization: str, temporary_password: str) -> str:
+def _invite_email(
+    user: User,
+    organization: str,
+    temporary_password: str,
+    teams: Sequence[str] = (),
+) -> str:
     greeting = f"Hello {user.full_name}," if user.full_name else "Hello,"
+    team_line = ""
+    if teams:
+        plural = "s" if len(teams) > 1 else ""
+        team_line = f"You are in the {', '.join(teams)} team{plural}.\n\n"
+    video = ""
+    if settings.INTRO_VIDEO_URL:
+        video = (
+            "New to Usus? Watch this short introduction first:\n"
+            f"{settings.INTRO_VIDEO_URL}\n\n"
+        )
     return (
         f"{greeting}\n\n"
         f"{organization} has added you to Usus, "
         "the customer-service training platform.\n\n"
+        f"{team_line}"
         f"Sign in here: {settings.FRONTEND_URL.rstrip('/')}/login\n"
         f"Email: {user.email}\n"
         f"Temporary password: {temporary_password}\n\n"
-        "You will be asked to choose a new password the first time you sign in.\n"
-    )
+        "You will be asked to choose a new password the first time you sign in.\n\n"
+        f"{video}"
+    ).rstrip() + "\n"
 
 
 async def send_invites(
@@ -253,7 +271,12 @@ async def send_invites(
                     send_email,
                     user.email,
                     "You've been invited to Usus",
-                    _invite_email(user, organization, temporary_password),
+                    _invite_email(
+                        user,
+                        organization,
+                        temporary_password,
+                        await team_names(db, user.id),
+                    ),
                 )
             except Exception:
                 logger.exception("Invite email to %s failed", user.email)

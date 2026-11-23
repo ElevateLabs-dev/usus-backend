@@ -38,6 +38,7 @@ from src.domains.scenarios.schemas import (
 )
 from src.domains.scenarios.service import ScenarioNameTakenError, ScenarioService
 from src.domains.scenarios.voices import VOICES, scenario_mood, voice_config
+from src.domains.teams import service as teams_service
 from src.infrastructure.llm.base import LLMProvider
 from src.infrastructure.llm.factory import get_llm_provider
 
@@ -82,13 +83,20 @@ def _tenant_of(ctx: AuthContext) -> UUID:
     return ctx.tenant_id
 
 
+def _viewer(ctx: AuthContext) -> UUID | None:
+    """Trainees only see scenarios for everyone and for their teams."""
+    return ctx.user_id if ctx.role == UserRole.TRAINEE else None
+
+
 async def _locked_levels(
     db: AsyncSession, ctx: AuthContext, tenant_id: UUID, progress: dict
 ) -> dict:
     """Levels are only locked for trainees; staff can try every scenario."""
     if ctx.role != UserRole.TRAINEE:
         return {}
-    return await _scenario_service.locked_levels(db, tenant_id, progress)
+    return await _scenario_service.locked_levels(
+        db, tenant_id, progress, for_user=ctx.user_id
+    )
 
 
 @router.get(
@@ -180,7 +188,9 @@ async def list_categories(
     ctx: Annotated[AuthContext, Depends(get_auth_context)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return await _scenario_service.list_categories(db, _tenant_of(ctx))
+    return await _scenario_service.list_categories(
+        db, _tenant_of(ctx), for_user=_viewer(ctx)
+    )
 
 
 @router.get(
@@ -208,7 +218,7 @@ async def list_scenarios(
 ):
     tenant_id = _tenant_of(ctx)
     scenarios = await _scenario_service.list_all_scenarios(
-        db, tenant_id, category=category, difficulty=difficulty
+        db, tenant_id, category=category, difficulty=difficulty, for_user=_viewer(ctx)
     )
     progress = await _scenario_service.user_progress(db, tenant_id, ctx.user_id)
     locked = await _locked_levels(db, ctx, tenant_id, progress)
@@ -261,7 +271,14 @@ async def get_scenario_detail(
     scenario = await _scenario_service.get_scenario_by_id(
         db=db, tenant_id=tenant_id, scenario_id=scenario_id
     )
-    if scenario is None or scenario.is_archived:
+    if (
+        scenario is None
+        or scenario.is_archived
+        or (
+            _viewer(ctx)
+            and not await teams_service.can_see(db, scenario.id, ctx.user_id)
+        )
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Scenario not found.",

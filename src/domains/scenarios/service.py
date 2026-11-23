@@ -27,6 +27,7 @@ from src.domains.scenarios.schemas import (
     SkillRef,
 )
 from src.domains.simulations.models import Session, has_activity
+from src.domains.teams.service import visible_to
 
 _DIFFICULTY_ORDER = {
     DifficultyLevel.BEGINNER: 0,
@@ -85,8 +86,12 @@ class ScenarioService:
         category: TrainingCategory | None = None,
         difficulty: DifficultyLevel | None = None,
         include_archived: bool = False,
+        for_user: uuid.UUID | None = None,
     ) -> Sequence[Scenario]:
+        """for_user: only the scenarios this trainee's teams may see."""
         query = select(Scenario).where(Scenario.tenant_id == tenant_id)
+        if for_user is not None:
+            query = query.where(visible_to(for_user))
         if not include_archived:
             query = query.where(Scenario.is_archived.is_(False))
         if category is not None:
@@ -105,13 +110,14 @@ class ScenarioService:
         )
 
     async def list_categories(
-        self, db: AsyncSession, tenant_id: uuid.UUID
+        self, db: AsyncSession, tenant_id: uuid.UUID, for_user: uuid.UUID | None = None
     ) -> list[CategoryResponse]:
-        result = await db.execute(
-            select(Scenario.category, func.count(Scenario.id))
-            .where(Scenario.tenant_id == tenant_id, Scenario.is_archived.is_(False))
-            .group_by(Scenario.category)
+        query = select(Scenario.category, func.count(Scenario.id)).where(
+            Scenario.tenant_id == tenant_id, Scenario.is_archived.is_(False)
         )
+        if for_user is not None:
+            query = query.where(visible_to(for_user))
+        result = await db.execute(query.group_by(Scenario.category))
         counts = {category: count for category, count in result.all()}
         return [
             CategoryResponse(
@@ -165,6 +171,7 @@ class ScenarioService:
         db: AsyncSession,
         tenant_id: uuid.UUID,
         progress: dict[uuid.UUID, ScenarioProgress],
+        for_user: uuid.UUID | None = None,
     ) -> dict[DifficultyLevel, str]:
         """
         The levels a trainee cannot start yet, each with the reason.
@@ -173,7 +180,7 @@ class ScenarioService:
         scenario of the level before it is passed (an empty level counts as
         passed).
         """
-        scenarios = await self.list_all_scenarios(db, tenant_id)
+        scenarios = await self.list_all_scenarios(db, tenant_id, for_user=for_user)
         locked: dict[DifficultyLevel, str] = {}
         for previous, level in zip(_LEVELS, _LEVELS[1:]):
             unpassed = [

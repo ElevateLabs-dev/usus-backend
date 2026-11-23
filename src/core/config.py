@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "Usus <onboarding@resend.dev>"
     # Where trainees sign in; used for the link in invite emails
     FRONTEND_URL: str = "http://localhost:3000"
+    # Intro video linked in invite emails (e.g. a YouTube link)
+    INTRO_VIDEO_URL: Optional[str] = None
 
     # Voice role-play via Vapi (https://vapi.ai). Without VAPI_API_KEY only
     # text role-play is available. This is the private key; the frontend uses
