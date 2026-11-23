@@ -12,6 +12,7 @@ from src.domains.evaluations.router import router as evaluations_router
 from src.domains.knowledge.router import router as knowledge_router
 from src.domains.metrics.router import router as metrics_router
 from src.domains.notifications.router import router as notifications_router
+from src.domains.onboarding.router import router as onboarding_router
 from src.domains.platform.router import router as platform_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
@@ -43,6 +44,10 @@ required**.
 
 OPENAPI_TAGS = [
     {"name": "Auth", "description": "Company signup, sign in and change password."},
+    {
+        "name": "Getting started",
+        "description": "Company setup checklist and the first-time walkthrough.",
+    },
     {
         "name": "Organizations",
         "description": "Platform admins onboard and manage client organizations.",
@@ -108,6 +113,7 @@ def create_app() -> FastAPI:
     # Register domain routers
     app.include_router(auth_router)
     app.include_router(signup_router)
+    app.include_router(onboarding_router)
     app.include_router(organizations_router)
     app.include_router(platform_router)
     app.include_router(users_router)
