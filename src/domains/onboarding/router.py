@@ -2,8 +2,8 @@
 Getting started: the company setup checklist and the first-time walkthrough.
 
 Nothing here blocks the platform; the checklist only shows what is left. Each
-step is worked out from the organization's data, so organizations created
-before the checklist see their real progress too.
+step is ticked off from the organization's data as it gets done, so
+organizations created before the checklist see their real progress too.
 """
 
 from datetime import datetime, timezone
@@ -11,7 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,6 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["Getting started"])
 _Staff = Annotated[
     AuthContext, Depends(require_roles(UserRole.COMPANY_ADMIN, UserRole.MANAGER))
 ]
-_Admin = Annotated[AuthContext, Depends(require_roles(UserRole.COMPANY_ADMIN))]
 
 
 class ChecklistStep(BaseModel):
@@ -47,12 +46,6 @@ class Checklist(BaseModel):
     steps: list[ChecklistStep]
     completed: int
     total: int
-    launched_at: datetime | None
-    dismissed: bool = Field(description="The company admin hid the checklist")
-
-
-class ChecklistUpdate(BaseModel):
-    dismissed: bool
 
 
 class WalkthroughDone(BaseModel):
@@ -98,19 +91,11 @@ async def _checklist(db: AsyncSession, tenant: Tenant) -> Checklist:
             description="Invite trainees and put them in teams.",
             done=trainees.scalar_one() > 0,
         ),
-        ChecklistStep(
-            key="launch",
-            title="Review and launch",
-            description="Check everything and start training.",
-            done=tenant.launched_at is not None,
-        ),
     ]
     return Checklist(
         steps=steps,
         completed=sum(step.done for step in steps),
         total=len(steps),
-        launched_at=tenant.launched_at,
-        dismissed=tenant.checklist_dismissed_at is not None,
     )
 
 
@@ -126,48 +111,13 @@ async def _tenant(db: AsyncSession, tenant_id: UUID | None) -> Tenant:
     response_model=Checklist,
     summary="Company setup checklist",
     description=(
-        "**Company admin / manager only.** The 5 setup steps and which are done, "
-        "for the progress bar. Optional: nothing is blocked until it is done."
+        "**Company admin / manager only.** The setup steps and which are done, "
+        "for the progress bar. Each step is ticked off as soon as it is done. "
+        "Optional: nothing is blocked until it is done."
     ),
 )
 async def get_checklist(ctx: _Staff, db: Annotated[AsyncSession, Depends(get_db)]):
     return await _checklist(db, await _tenant(db, ctx.tenant_id))
-
-
-@router.patch(
-    "/checklist",
-    response_model=Checklist,
-    summary="Hide or show the checklist",
-    description="**Company admin only.**",
-)
-async def update_checklist(
-    body: ChecklistUpdate,
-    ctx: _Admin,
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    tenant = await _tenant(db, ctx.tenant_id)
-    tenant.checklist_dismissed_at = (
-        datetime.now(timezone.utc) if body.dismissed else None
-    )
-    await db.commit()
-    return await _checklist(db, tenant)
-
-
-@router.post(
-    "/launch",
-    response_model=Checklist,
-    summary="Launch",
-    description=(
-        "**Company admin only.** Marks the last checklist step done. It does not "
-        "require the other steps."
-    ),
-)
-async def launch(ctx: _Admin, db: Annotated[AsyncSession, Depends(get_db)]):
-    tenant = await _tenant(db, ctx.tenant_id)
-    if tenant.launched_at is None:
-        tenant.launched_at = datetime.now(timezone.utc)
-        await db.commit()
-    return await _checklist(db, tenant)
 
 
 @router.post(
