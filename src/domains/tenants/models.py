@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.base_model import Base
@@ -22,6 +22,10 @@ class Tenant(Base):
     # Answers from the signup form
     company_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     referral_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The evaluator also checks trainees against the knowledge base
+    use_kb_for_evaluation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     users: Mapped[list["User"]] = relationship(
         "User",
         back_populates="tenant",

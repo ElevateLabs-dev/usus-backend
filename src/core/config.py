@@ -66,6 +66,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4.1-mini"
+    # Knowledge base search (needs OPENAI_API_KEY)
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-haiku-4-5"
 

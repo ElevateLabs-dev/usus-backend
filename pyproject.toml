@@ -22,6 +22,7 @@ dependencies = [
     "pgvector>=0.4.2",                  # For RAG embeddings in PostgreSQL
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
+    "pypdf>=6.21.4,<7",                 # Reading text from knowledge base PDFs
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.22",         # Required for file/audio uploads
     "sqlalchemy[asyncio]>=2.0.47",

@@ -17,10 +17,12 @@ from src.domains.evaluations.prompts import (
     build_evaluation_system_prompt,
     build_evaluation_user_prompt,
 )
+from src.domains.knowledge import service as knowledge_service
 from src.domains.metrics import service as metrics_service
 from src.domains.metrics.service import MetricSpec
 from src.domains.scenarios.models import Scenario
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
+from src.domains.tenants.models import Tenant
 from src.infrastructure.llm.base import LLMProvider
 
 logger = logging.getLogger("usus.evaluations")
@@ -107,7 +109,8 @@ class EvaluationService:
         elif trainee_turns < MIN_TRAINEE_TURNS or trainee_words < MIN_TRAINEE_WORDS:
             evaluation = _too_short_evaluation(keys)
         else:
-            evaluation = await self._ask_llm(scenario, metrics, messages)
+            policies = await _knowledge_excerpts(db, tenant_id, scenario, messages)
+            evaluation = await self._ask_llm(scenario, metrics, messages, policies)
 
         overall = round(sum(evaluation.dimensions[k].score for k in keys) / len(keys))
 
@@ -151,6 +154,7 @@ class EvaluationService:
         scenario: Scenario | None,
         metrics: Sequence[MetricSpec],
         messages: Sequence[Message],
+        policies: Sequence[str] = (),
     ) -> _LLMEvaluation:
         transcript = "\n".join(
             f"{'Trainee' if m.role == MessageRole.USER else 'Customer'}: {m.content}"
@@ -161,7 +165,9 @@ class EvaluationService:
             {
                 "role": "user",
                 "content": build_evaluation_user_prompt(
-                    _scenario_context(scenario), transcript, *_trainee_effort(messages)
+                    _scenario_context(scenario, policies),
+                    transcript,
+                    *_trainee_effort(messages),
                 ),
             }
         ]
@@ -235,7 +241,37 @@ def _extract_json(response_text: str) -> dict:
     return parsed
 
 
-def _scenario_context(scenario: Scenario | None) -> str:
+async def _knowledge_excerpts(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    scenario: Scenario | None,
+    messages: Sequence[Message],
+) -> list[str]:
+    """The knowledge base passages most relevant to this session, if the
+    organization uses its knowledge base for evaluation."""
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None or not tenant.use_kb_for_evaluation:
+        return []
+    said = " ".join(m.content for m in messages if m.role == MessageRole.USER)
+    query = " ".join(
+        part
+        for part in (
+            scenario.name if scenario else "",
+            scenario.description if scenario else "",
+            scenario.situation if scenario else "",
+            said[:2000],
+        )
+        if part
+    )
+    try:
+        return await knowledge_service.search(db, tenant_id, query)
+    except Exception:
+        # Evaluate without it rather than fail
+        logger.exception("Knowledge base search failed for tenant %s", tenant_id)
+        return []
+
+
+def _scenario_context(scenario: Scenario | None, policies: Sequence[str] = ()) -> str:
     if scenario is None:
         return "(unknown scenario)"
     parts = [
@@ -256,6 +292,13 @@ def _scenario_context(scenario: Scenario | None) -> str:
         lines.append(
             f"Policy/fact the trainee could use — {info['label']}: {info['content']}"
         )
+    if policies:
+        lines.append(
+            "\nFrom the company's own documents (policies and procedures the "
+            "trainee is expected to follow; judge Accuracy and Policy against "
+            "them where relevant):"
+        )
+        lines.extend(f"--- excerpt ---\n{text}" for text in policies)
     return "\n".join(lines)
 
 
