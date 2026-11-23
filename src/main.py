@@ -9,6 +9,7 @@ from src.core.config import settings
 from src.domains.auth.router import router as auth_router
 from src.domains.auth.signup import router as signup_router
 from src.domains.evaluations.router import router as evaluations_router
+from src.domains.knowledge.router import router as knowledge_router
 from src.domains.metrics.router import router as metrics_router
 from src.domains.notifications.router import router as notifications_router
 from src.domains.platform.router import router as platform_router
@@ -60,6 +61,10 @@ OPENAPI_TAGS = [
     },
     {"name": "Scenarios", "description": "Training scenarios for your organization."},
     {
+        "name": "Knowledge base",
+        "description": "Your policies and documents (PDF / Word).",
+    },
+    {
         "name": "Metrics",
         "description": "What sessions are scored on: 7 defaults plus your own.",
     },
@@ -110,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(evaluations_router)
     app.include_router(scenarios_router)
     app.include_router(metrics_router)
+    app.include_router(knowledge_router)
     app.include_router(progress_router)
     app.include_router(notifications_router)
 
