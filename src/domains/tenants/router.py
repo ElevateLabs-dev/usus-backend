@@ -3,10 +3,19 @@ Organizations router — how the Usus team (platform admins) onboards and
 manages client organizations.
 """
 
+import uuid
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import AsyncSessionLocal, get_db
@@ -26,7 +35,9 @@ from src.domains.usage.schemas import UsageReport
 from src.domains.usage.service import usage_report
 from src.domains.users import service as users_service
 from src.domains.users.models import User
+from src.domains.users.router import _image_type
 from src.domains.users.schemas import InviteResendResponse, OrgUserRead, TraineeCreate
+from src.infrastructure.storage.r2 import R2Storage, StorageError
 
 # Session factory used by the background invite task (swapped out in tests).
 _session_factory = AsyncSessionLocal
@@ -140,9 +151,9 @@ async def get_my_usage(
 @router.patch(
     "/me",
     response_model=OrganizationDetail,
-    summary="Rename your organization",
-    description="**Company admin only.** The name must not be used by another "
-    "organization.",
+    summary="Update your organization",
+    description="**Company admin only.** Send the fields to change. The name must "
+    "not be used by another organization.",
     responses={
         401: {"description": "Missing or invalid token"},
         403: {"description": "Not a company admin"},
@@ -155,12 +166,90 @@ async def rename_my_organization(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     tenant = await tenant_repo.get(db, id=ctx.tenant_id)
+    changes = body.model_dump(exclude_unset=True)
+    for field in ("company_type", "referral_source"):
+        if field in changes:
+            setattr(tenant, field, (changes[field] or "").strip() or None)
     try:
         await service.rename_or_set_active(db, tenant, body.name, None)
     except service.OrganizationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
     return await service.get_organization_detail(db, ctx.tenant_id)
+
+
+_LOGO_MAX_BYTES = 2 * 1024 * 1024
+# Swapped out in tests
+_storage = R2Storage()
+
+
+@router.put(
+    "/me/logo",
+    response_model=OrganizationDetail,
+    summary="Upload your company logo",
+    description=(
+        "**Company admin only.** Multipart field `file`: JPEG, PNG or WebP, up to "
+        "2 MB. Returned as `logo_url`."
+    ),
+    responses={
+        400: {"description": "Not a JPEG, PNG or WebP image, or too large"},
+        403: {"description": "Not a company admin"},
+        503: {"description": "File storage is not configured"},
+    },
+)
+async def upload_logo(
+    file: UploadFile,
+    ctx: _CompanyAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not _storage.configured:
+        raise HTTPException(status_code=503, detail="Logo upload is not available yet")
+    data = await file.read(_LOGO_MAX_BYTES + 1)
+    if len(data) > _LOGO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="The image must be 2 MB or smaller")
+    kind = _image_type(data)
+    if kind is None:
+        raise HTTPException(status_code=400, detail="Upload a JPEG, PNG or WebP image")
+    content_type, extension = kind
+
+    tenant = await tenant_repo.get(db, id=ctx.tenant_id)
+    key = f"logos/{tenant.id}/{uuid.uuid4().hex}.{extension}"
+    try:
+        await _storage.put(key, data, content_type)
+    except StorageError:
+        raise HTTPException(
+            status_code=502, detail="Could not save the image. Please try again."
+        )
+    old_key, tenant.logo_key = tenant.logo_key, key
+    await db.commit()
+    if old_key:
+        await _delete_quietly(old_key)
+    return await service.get_organization_detail(db, ctx.tenant_id)
+
+
+@router.delete(
+    "/me/logo",
+    response_model=OrganizationDetail,
+    summary="Remove your company logo",
+    responses={403: {"description": "Not a company admin"}},
+)
+async def remove_logo(
+    ctx: _CompanyAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    tenant = await tenant_repo.get(db, id=ctx.tenant_id)
+    old_key, tenant.logo_key = tenant.logo_key, None
+    await db.commit()
+    if old_key:
+        await _delete_quietly(old_key)
+    return await service.get_organization_detail(db, ctx.tenant_id)
+
+
+async def _delete_quietly(key: str) -> None:
+    try:
+        await _storage.delete(key)
+    except StorageError:
+        pass
 
 
 @router.get(

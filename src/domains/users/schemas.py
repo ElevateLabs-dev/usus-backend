@@ -105,6 +105,9 @@ class OrgUserRead(BaseModel):
         "has not gone out yet"
     )
     created_at: datetime
+    walkthrough_done_at: datetime | None = Field(
+        default=None, description="Null until the user finishes the walkthrough"
+    )
     avatar_key: str | None = Field(default=None, exclude=True)
 
     @computed_field

@@ -133,6 +133,9 @@ async def list_organizations(
             trainees_count=trainees.get(tenant.id, 0),
             scenarios_count=scenarios.get(tenant.id, 0),
             sessions_completed=sessions.get(tenant.id, 0),
+            company_type=tenant.company_type,
+            referral_source=tenant.referral_source,
+            logo_key=tenant.logo_key,
         )
         for tenant in tenants
     ]
