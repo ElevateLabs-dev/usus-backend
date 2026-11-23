@@ -6,11 +6,7 @@ from typing import Sequence
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.training import (
-    SkillDimension,
-    category_name,
-    dimension_name,
-)
+from src.core.training import category_name, dimension_name
 from src.domains.evaluations.crud import (
     CRUDDimensionScore,
     CRUDEvaluationResult,
@@ -18,9 +14,11 @@ from src.domains.evaluations.crud import (
 )
 from src.domains.evaluations.models import DimensionScore, EvaluationResult, RedFlag
 from src.domains.evaluations.prompts import (
-    EVALUATION_SYSTEM_PROMPT,
+    build_evaluation_system_prompt,
     build_evaluation_user_prompt,
 )
+from src.domains.metrics import service as metrics_service
+from src.domains.metrics.service import MetricSpec
 from src.domains.scenarios.models import Scenario
 from src.domains.simulations.models import Message, MessageRole, Session, SessionStatus
 from src.infrastructure.llm.base import LLMProvider
@@ -52,7 +50,7 @@ class _LLMStaffView(BaseModel):
     """The same feedback written about the trainee, for their managers."""
 
     summary: str
-    rationales: dict[SkillDimension, str] = {}
+    rationales: dict[str, str] = {}
     strengths: list[str] = []
     improvements: list[str] = []
     missed_opportunities: list[str] = []
@@ -62,7 +60,7 @@ class _LLMStaffView(BaseModel):
 class _LLMEvaluation(BaseModel):
     # Written to the trainee ("You ...").
     summary: str
-    dimensions: dict[SkillDimension, _LLMDimension]
+    dimensions: dict[str, _LLMDimension]
     strengths: list[str] = []
     improvements: list[str] = []
     missed_opportunities: list[str] = []
@@ -94,27 +92,26 @@ class EvaluationService:
         messages: Sequence[Message],
     ) -> EvaluationResult:
         """
-        Score a finished session on the 7 dimensions and save the feedback.
+        Score a finished session on its scenario's metrics and save the feedback.
 
         Raises EvaluationFailedError if the LLM output is unusable twice; nothing
         is saved in that case, so the evaluation can simply be retried.
         """
         scenario = await db.get(Scenario, session.scenario_id)
+        metrics = await metrics_service.for_scenario(db, tenant_id, scenario)
+        keys = [m.key for m in metrics]
 
         trainee_turns, trainee_words = _trainee_effort(messages)
         if trainee_turns == 0:
-            evaluation = _empty_evaluation()
+            evaluation = _empty_evaluation(keys)
         elif trainee_turns < MIN_TRAINEE_TURNS or trainee_words < MIN_TRAINEE_WORDS:
-            evaluation = _too_short_evaluation()
+            evaluation = _too_short_evaluation(keys)
         else:
-            evaluation = await self._ask_llm(scenario, messages)
+            evaluation = await self._ask_llm(scenario, metrics, messages)
 
-        overall = round(
-            sum(d.score for d in evaluation.dimensions.values())
-            / len(evaluation.dimensions)
-        )
+        overall = round(sum(evaluation.dimensions[k].score for k in keys) / len(keys))
 
-        # Save the evaluation, its 7 dimensions, red flags and the session's
+        # Save the evaluation, its metric scores, red flags and the session's
         # EVALUATED status in ONE transaction: a client polling for the result
         # sees either nothing or the complete evaluation, never a partial one.
         result = EvaluationResult(
@@ -130,12 +127,12 @@ class EvaluationService:
         )
         result.dimension_scores = [
             DimensionScore(
-                dimension_key=dimension.value,
-                dimension_name=dimension_name(dimension),
-                score=evaluation.dimensions[dimension].score,
-                rationale=evaluation.dimensions[dimension].rationale,
+                dimension_key=metric.key,
+                dimension_name=metric.name,
+                score=evaluation.dimensions[metric.key].score,
+                rationale=evaluation.dimensions[metric.key].rationale,
             )
-            for dimension in SkillDimension  # fixed display order
+            for metric in metrics  # fixed display order
         ]
         result.red_flags = [
             RedFlag(reason=flag.reason[:255], description=flag.description)
@@ -150,7 +147,10 @@ class EvaluationService:
         return result
 
     async def _ask_llm(
-        self, scenario: Scenario | None, messages: Sequence[Message]
+        self,
+        scenario: Scenario | None,
+        metrics: Sequence[MetricSpec],
+        messages: Sequence[Message],
     ) -> _LLMEvaluation:
         transcript = "\n".join(
             f"{'Trainee' if m.role == MessageRole.USER else 'Customer'}: {m.content}"
@@ -169,7 +169,7 @@ class EvaluationService:
         last_error: Exception | None = None
         for _attempt in range(2):
             response_text = await self.llm_provider.generate_response(
-                system_prompt=EVALUATION_SYSTEM_PROMPT,
+                system_prompt=build_evaluation_system_prompt(metrics),
                 messages=llm_messages,
                 temperature=0.0,
                 max_tokens=2000,
@@ -177,7 +177,7 @@ class EvaluationService:
             )
             try:
                 evaluation = _LLMEvaluation.model_validate(_extract_json(response_text))
-                missing = set(SkillDimension) - set(evaluation.dimensions)
+                missing = {m.key for m in metrics} - set(evaluation.dimensions)
                 if missing:
                     raise ValueError(f"missing dimensions: {sorted(missing)}")
                 return evaluation
@@ -267,9 +267,7 @@ def _staff_feedback(evaluation: _LLMEvaluation) -> dict | None:
         return None
     return {
         "summary": view.summary,
-        "rationales": {
-            dimension.value: text for dimension, text in view.rationales.items()
-        },
+        "rationales": dict(view.rationales),
         "strengths": view.strengths,
         "improvements": view.improvements,
         "missed_opportunities": view.missed_opportunities,
@@ -283,7 +281,7 @@ def _trainee_effort(messages: Sequence[Message]) -> tuple[int, int]:
     return len(said), sum(len(text.split()) for text in said)
 
 
-def _too_short_evaluation() -> _LLMEvaluation:
+def _too_short_evaluation(keys: list[str]) -> _LLMEvaluation:
     """Deterministic result when the trainee barely engaged (no LLM call)."""
     reason = "The conversation was too short to show this skill, so it scores 0."
     staff_reason = "The conversation was too short for the trainee to show this skill."
@@ -292,9 +290,7 @@ def _too_short_evaluation() -> _LLMEvaluation:
             "The session ended before you dealt with the customer's problem, "
             "so there was nothing to assess."
         ),
-        dimensions={
-            d: _LLMDimension(score=0, rationale=reason) for d in SkillDimension
-        },
+        dimensions={k: _LLMDimension(score=0, rationale=reason) for k in keys},
         improvements=[
             "Stay in the conversation until the customer's problem is handled."
         ],
@@ -307,7 +303,7 @@ def _too_short_evaluation() -> _LLMEvaluation:
                 "The trainee ended the session before dealing with the "
                 "customer's problem, so there was nothing to assess."
             ),
-            rationales={d: staff_reason for d in SkillDimension},
+            rationales={k: staff_reason for k in keys},
             improvements=[
                 "The trainee should stay in the conversation until the "
                 "customer's problem is handled."
@@ -320,7 +316,7 @@ def _too_short_evaluation() -> _LLMEvaluation:
     )
 
 
-def _empty_evaluation() -> _LLMEvaluation:
+def _empty_evaluation(keys: list[str]) -> _LLMEvaluation:
     """Deterministic result when the trainee never replied (no LLM call)."""
     reason = "You did not respond to the customer, so nothing could be scored."
     staff_reason = (
@@ -328,16 +324,14 @@ def _empty_evaluation() -> _LLMEvaluation:
     )
     return _LLMEvaluation(
         summary="The session ended before you responded to the customer.",
-        dimensions={
-            d: _LLMDimension(score=0, rationale=reason) for d in SkillDimension
-        },
+        dimensions={k: _LLMDimension(score=0, rationale=reason) for k in keys},
         improvements=["Respond to the customer before ending the session."],
         recommendations=[
             "Start by greeting the customer and acknowledging their problem."
         ],
         staff_view=_LLMStaffView(
             summary="The session ended before the trainee responded to the customer.",
-            rationales={d: staff_reason for d in SkillDimension},
+            rationales={k: staff_reason for k in keys},
             improvements=[
                 "The trainee should respond to the customer before ending the session."
             ],

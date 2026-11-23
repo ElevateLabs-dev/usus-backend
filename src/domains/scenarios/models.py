@@ -47,6 +47,10 @@ class Scenario(TenantAwareBase):
     skills: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
+    # Metric keys the evaluator scores (see domains/metrics); [] = the 7 defaults
+    metrics: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
     estimated_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, default=10, server_default=text("10")
     )

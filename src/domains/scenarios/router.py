@@ -21,6 +21,7 @@ from src.core.dependencies import (
     require_roles,
 )
 from src.core.training import TrainingCategory
+from src.domains.metrics import service as metrics_service
 from src.domains.notifications.service import notify_scenario_added
 from src.domains.scenarios.crud import scenario as scenario_repo
 from src.domains.scenarios.models import DifficultyLevel, Scenario
@@ -211,8 +212,11 @@ async def list_scenarios(
     )
     progress = await _scenario_service.user_progress(db, tenant_id, ctx.user_id)
     locked = await _locked_levels(db, ctx, tenant_id, progress)
+    names = await metrics_service.metric_names(db, tenant_id)
     return [
-        _scenario_service.to_summary(s, progress.get(s.id), locked.get(s.difficulty))
+        _scenario_service.to_summary(
+            s, progress.get(s.id), locked.get(s.difficulty), names
+        )
         for s in scenarios
     ]
 
@@ -266,7 +270,10 @@ async def get_scenario_detail(
     progress = await _scenario_service.user_progress(db, tenant_id, ctx.user_id)
     locked = await _locked_levels(db, ctx, tenant_id, progress)
     return _scenario_service.to_brief(
-        scenario, progress.get(scenario.id), locked.get(scenario.difficulty)
+        scenario,
+        progress.get(scenario.id),
+        locked.get(scenario.difficulty),
+        await metrics_service.metric_names(db, tenant_id),
     )
 
 
@@ -302,7 +309,11 @@ async def _editable_scenario(
         "shown to trainees. `success_criteria` and `important_information` are "
         "used by the evaluator."
     ),
-    responses={**_EDITOR_ERRORS, **_NAME_TAKEN},
+    responses={
+        **_EDITOR_ERRORS,
+        **_NAME_TAKEN,
+        422: {"description": "Unknown metric key"},
+    },
 )
 async def create_scenario(
     body: ScenarioWrite,
@@ -310,6 +321,7 @@ async def create_scenario(
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
 ):
+    await _check_metrics(db, ctx, body)
     try:
         scenario = await _scenario_service.create_scenario(db, _tenant_of(ctx), body)
     except ScenarioNameTakenError:
@@ -326,6 +338,17 @@ async def create_scenario(
         _session_factory,
     )
     return scenario
+
+
+async def _check_metrics(db: AsyncSession, ctx: AuthContext, body) -> None:
+    if body.metrics is None:
+        return
+    try:
+        body.metrics = await metrics_service.check_keys(
+            db, _tenant_of(ctx), body.metrics
+        )
+    except metrics_service.UnknownMetricError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get(
@@ -369,6 +392,7 @@ async def update_scenario(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     scenario = await _editable_scenario(db, ctx, scenario_id)
+    await _check_metrics(db, ctx, body)
     try:
         return await _scenario_service.update_scenario(db, scenario, body)
     except ScenarioNameTakenError:

@@ -22,6 +22,7 @@ class ScenarioBase(BaseModel):
     difficulty: DifficultyLevel
     category: Optional[TrainingCategory] = None
     skills: list[SkillDimension] = []
+    metrics: list[str] = []
     estimated_minutes: int = 10
     customer_name: Optional[str] = None
     customer_personality: Optional[str] = None
@@ -56,7 +57,7 @@ class CategoryRef(BaseModel):
 
 
 class SkillRef(BaseModel):
-    id: SkillDimension
+    id: str
     name: str
 
 
@@ -87,6 +88,7 @@ class ScenarioSummary(BaseModel):
     difficulty: DifficultyLevel
     persona: CustomerPersona
     skills: list[SkillRef] = Field(description="Skills this scenario tests")
+    metrics: list[SkillRef] = Field(description="What the session is scored on")
     estimated_minutes: int
     progress: ScenarioProgress
     locked: bool = Field(
@@ -132,6 +134,12 @@ class ScenarioWrite(BaseModel):
     persona: CustomerPersona = Field(description="The customer's overall mood")
     skills: list[SkillDimension] = Field(
         default=[], max_length=7, description="Skills this scenario tests"
+    )
+    metrics: list[str] = Field(
+        default=[],
+        max_length=20,
+        description="Metric keys (GET /metrics) this scenario is scored on; "
+        "empty = the 7 default metrics",
     )
     estimated_minutes: int = Field(default=10, ge=1, le=120)
 
@@ -227,6 +235,7 @@ class ScenarioPatch(BaseModel):
     difficulty: Optional[DifficultyLevel] = None
     persona: Optional[CustomerPersona] = None
     skills: Optional[list[SkillDimension]] = Field(default=None, max_length=7)
+    metrics: Optional[list[str]] = Field(default=None, max_length=20)
     estimated_minutes: Optional[int] = Field(default=None, ge=1, le=120)
     customer_name: Optional[str] = Field(default=None, max_length=255)
     customer_personality: Optional[str] = Field(default=None, max_length=255)

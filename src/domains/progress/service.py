@@ -33,6 +33,17 @@ def _avg(values: list[int]) -> int | None:
     return round(mean(values)) if values else None
 
 
+def _metric_order(names: dict[str, str]) -> list[str]:
+    """Default metrics in their fixed order, then the company's own by name.
+    Default metrics show their current name, not the one stored with a score."""
+    defaults = [d.value for d in SkillDimension]
+    for key in defaults:
+        if key in names:
+            names[key] = dimension_name(key)
+    own = sorted((k for k in names if k not in defaults), key=lambda k: names[k])
+    return [k for k in defaults if k in names] + own
+
+
 async def build_report(
     db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID
 ) -> ProgressReport:
@@ -93,28 +104,31 @@ async def build_report(
     # Per-dimension scores in session order (only 0-100 evaluations have a key)
     eval_order = {row[5]: i for i, row in enumerate(evaluated)}
     by_dimension: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    names: dict[str, str] = {}
     if eval_order:
         dim_rows = await db.execute(
             select(
                 DimensionScore.evaluation_id,
                 DimensionScore.dimension_key,
+                DimensionScore.dimension_name,
                 DimensionScore.score,
             ).where(
                 DimensionScore.evaluation_id.in_(list(eval_order)),
                 DimensionScore.dimension_key.is_not(None),
             )
         )
-        for evaluation_id, key, score in dim_rows.all():
+        for evaluation_id, key, name, score in dim_rows.all():
             by_dimension[key].append((eval_order[evaluation_id], score))
+            names[key] = name
 
     dimensions = []
-    for dimension in SkillDimension:
-        points = [score for _, score in sorted(by_dimension.get(dimension.value, []))]
+    for key in _metric_order(names):
+        points = [score for _, score in sorted(by_dimension.get(key, []))]
         if points:
             dimensions.append(
                 DimensionProgress(
-                    id=dimension,
-                    name=dimension_name(dimension),
+                    id=key,
+                    name=names[key],
                     average=round(mean(points)),
                     latest=points[-1],
                     change=points[-1] - points[0],
@@ -217,7 +231,11 @@ async def team_skills(db: AsyncSession, tenant_id: uuid.UUID) -> TeamSkillsRepor
             by_category[category].append(score)
 
     dim_rows = await db.execute(
-        select(DimensionScore.dimension_key, DimensionScore.score)
+        select(
+            DimensionScore.dimension_key,
+            DimensionScore.dimension_name,
+            DimensionScore.score,
+        )
         .join(EvaluationResult, EvaluationResult.id == DimensionScore.evaluation_id)
         .where(
             EvaluationResult.tenant_id == tenant_id,
@@ -225,19 +243,20 @@ async def team_skills(db: AsyncSession, tenant_id: uuid.UUID) -> TeamSkillsRepor
         )
     )
     by_dimension: dict[str, list[int]] = defaultdict(list)
-    for key, score in dim_rows.all():
+    names: dict[str, str] = {}
+    for key, name, score in dim_rows.all():
         by_dimension[key].append(score)
+        names[key] = name
 
     dimensions = sorted(
         (
             TeamDimension(
-                id=dimension,
-                name=dimension_name(dimension),
-                average=round(mean(by_dimension[dimension.value])),
-                sessions=len(by_dimension[dimension.value]),
+                id=key,
+                name=names[key],
+                average=round(mean(by_dimension[key])),
+                sessions=len(by_dimension[key]),
             )
-            for dimension in SkillDimension
-            if by_dimension.get(dimension.value)
+            for key in _metric_order(names)
         ),
         key=lambda item: item.average,
     )

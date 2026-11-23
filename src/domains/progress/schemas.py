@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from src.core.training import SkillDimension, TrainingCategory
+from src.core.training import TrainingCategory
 
 
 class ScorePoint(BaseModel):
@@ -15,7 +15,7 @@ class ScorePoint(BaseModel):
 
 
 class DimensionProgress(BaseModel):
-    id: SkillDimension
+    id: str = Field(description="Metric key (a default or the company's own)")
     name: str
     average: int = Field(description="Average across all evaluated sessions, 0-100")
     latest: int = Field(description="Score in the most recent session")
@@ -44,7 +44,7 @@ class ProgressReport(BaseModel):
     improving: bool | None
     score_history: list[ScorePoint] = Field(description="Oldest first, for a chart")
     dimensions: list[DimensionProgress] = Field(
-        description="The 7 dimensions (empty before any evaluation)"
+        description="Each metric scored so far (empty before any evaluation)"
     )
     categories: list[CategoryProgress]
 
@@ -61,7 +61,7 @@ class TraineeSummary(BaseModel):
 
 
 class TeamDimension(BaseModel):
-    id: SkillDimension
+    id: str = Field(description="Metric key (a default or the company's own)")
     name: str
     average: int = Field(description="Team average across evaluated sessions, 0-100")
     sessions: int = Field(description="Evaluated sessions scored on this dimension")
@@ -71,9 +71,10 @@ class TeamSkillsReport(BaseModel):
     sessions_completed: int = Field(description="Evaluated sessions in the team")
     average_score: int | None = Field(description="0-100; null before any evaluation")
     dimensions: list[TeamDimension] = Field(
-        description="The 7 dimensions, weakest first (empty before any evaluation)"
+        description="Each metric scored so far, weakest first "
+        "(empty before any evaluation)"
     )
-    weakest_dimension: SkillDimension | None = Field(
+    weakest_dimension: str | None = Field(
         description="The skill to focus team training on"
     )
     categories: list[CategoryProgress] = Field(
