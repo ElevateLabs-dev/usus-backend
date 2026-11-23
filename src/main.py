@@ -15,6 +15,7 @@ from src.domains.notifications.router import router as notifications_router
 from src.domains.platform.router import router as platform_router
 from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
+from src.domains.scenarios.suggestions import router as suggestions_router
 from src.domains.simulations import idle
 from src.domains.simulations.router import router as simulations_router
 from src.domains.teams.router import router as teams_router
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(teams_router)
     app.include_router(simulations_router)
     app.include_router(evaluations_router)
+    app.include_router(suggestions_router)
     app.include_router(scenarios_router)
     app.include_router(metrics_router)
     app.include_router(knowledge_router)

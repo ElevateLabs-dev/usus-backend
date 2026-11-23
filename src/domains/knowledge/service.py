@@ -117,3 +117,25 @@ async def search(
     rows = (await db.execute(base)).all()
     rows.sort(key=lambda row: _cosine_distance(row[1], vector))
     return [content for content, _ in rows[:limit]]
+
+
+async def sample_passages(
+    db: AsyncSession, tenant_id: uuid.UUID, limit: int
+) -> list[str]:
+    """Up to `limit` passages, taken from every ready document in turn."""
+    rows = await db.execute(
+        select(DocumentChunk.document_id, DocumentChunk.content)
+        .where(DocumentChunk.tenant_id == tenant_id)
+        .order_by(DocumentChunk.document_id, DocumentChunk.position)
+    )
+    by_document: dict[uuid.UUID, list[str]] = {}
+    for document_id, content in rows.all():
+        by_document.setdefault(document_id, []).append(content)
+    queues = list(by_document.values())
+    picked: list[str] = []
+    while queues and len(picked) < limit:
+        for queue in queues:
+            if queue and len(picked) < limit:
+                picked.append(queue.pop(0))
+        queues = [q for q in queues if q]
+    return picked
