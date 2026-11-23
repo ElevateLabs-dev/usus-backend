@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4.1-mini"
     # Knowledge base search (needs OPENAI_API_KEY)
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # AI-suggested scenarios closer than this (cosine similarity, 0-1) to an
+    # existing scenario or another suggestion are dropped as duplicates
+    SCENARIO_SIMILARITY_THRESHOLD: float = 0.85
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-haiku-4-5"
 
