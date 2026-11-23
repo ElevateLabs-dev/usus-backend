@@ -32,6 +32,7 @@ from src.core.dependencies import (
     get_auth_context_allow_password_change,
     require_roles,
 )
+from src.domains.teams import service as teams_service
 from src.domains.users import service
 from src.domains.users.crud import user as user_repo
 from src.domains.users.schemas import (
@@ -44,6 +45,7 @@ from src.domains.users.schemas import (
     OrgUserUpdate,
     ProfileUpdate,
     TraineeCreate,
+    TraineeInvite,
     UserInvite,
 )
 from src.infrastructure.storage.r2 import R2Storage, StorageError
@@ -95,6 +97,13 @@ def _tenant_of(ctx: AuthContext) -> UUID:
             detail="Tenant context required",
         )
     return ctx.tenant_id
+
+
+async def _check_teams(db: AsyncSession, tenant_id: UUID, team_ids) -> list[UUID]:
+    try:
+        return await teams_service.check_team_ids(db, tenant_id, team_ids)
+    except teams_service.UnknownIdsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 def _schedule_invites(background_tasks: BackgroundTasks, user_ids: list[UUID]) -> None:
@@ -338,6 +347,7 @@ async def invite_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Managers can only invite trainees",
         )
+    team_ids = await _check_teams(db, tenant_id, body.team_ids)
 
     created, skipped = await service.add_users(
         db,
@@ -350,6 +360,7 @@ async def invite_user(
             status_code=status.HTTP_409_CONFLICT, detail=skipped[0].reason
         )
 
+    await teams_service.add_members(db, tenant_id, team_ids, [created[0].id])
     _schedule_invites(background_tasks, [created[0].id])
     return created[0]
 
@@ -371,17 +382,20 @@ async def invite_user(
     },
 )
 async def add_trainee(
-    body: TraineeCreate,
+    body: TraineeInvite,
     ctx: _OrgStaff,
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
 ):
-    created, skipped = await service.add_trainees(db, _tenant_of(ctx), [body])
+    tenant_id = _tenant_of(ctx)
+    team_ids = await _check_teams(db, tenant_id, body.team_ids)
+    created, skipped = await service.add_trainees(db, tenant_id, [body])
     if not created:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=skipped[0].reason
         )
 
+    await teams_service.add_members(db, tenant_id, team_ids, [created[0].id])
     _schedule_invites(background_tasks, [created[0].id])
     return created[0]
 
@@ -405,7 +419,10 @@ async def add_trainees_bulk(
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
 ):
-    created, skipped = await service.add_trainees(db, _tenant_of(ctx), body.trainees)
+    tenant_id = _tenant_of(ctx)
+    team_ids = await _check_teams(db, tenant_id, body.team_ids)
+    created, skipped = await service.add_trainees(db, tenant_id, body.trainees)
+    await teams_service.add_members(db, tenant_id, team_ids, [u.id for u in created])
     _schedule_invites(background_tasks, [u.id for u in created])
     return BulkTraineeResult(created=created, skipped=skipped)
 
@@ -467,8 +484,12 @@ async def import_trainees(
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(description="The trainee list (.xlsx or .csv)")],
+    team_id: Annotated[
+        list[UUID], Query(description="Teams to add every trainee to")
+    ] = [],
 ):
     tenant_id = _tenant_of(ctx)
+    team_ids = await _check_teams(db, tenant_id, team_id)
     content = await file.read(_MAX_UPLOAD_BYTES + 1)
     if len(content) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -482,6 +503,7 @@ async def import_trainees(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     created, skipped = await service.add_trainees(db, tenant_id, entries)
+    await teams_service.add_members(db, tenant_id, team_ids, [u.id for u in created])
     _schedule_invites(background_tasks, [u.id for u in created])
     return BulkTraineeResult(created=created, skipped=invalid + skipped)
 

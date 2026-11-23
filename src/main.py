@@ -16,6 +16,7 @@ from src.domains.progress.router import router as progress_router
 from src.domains.scenarios.router import router as scenarios_router
 from src.domains.simulations import idle
 from src.domains.simulations.router import router as simulations_router
+from src.domains.teams.router import router as teams_router
 from src.domains.tenants.router import router as organizations_router
 from src.domains.users.router import router as users_router
 
@@ -52,6 +53,10 @@ OPENAPI_TAGS = [
     {
         "name": "Users & Trainees",
         "description": "Your profile, and how organizations add and manage trainees.",
+    },
+    {
+        "name": "Teams",
+        "description": "Group users into teams; trainees see their teams' scenarios.",
     },
     {"name": "Scenarios", "description": "Training scenarios for your organization."},
     {
@@ -100,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(organizations_router)
     app.include_router(platform_router)
     app.include_router(users_router)
+    app.include_router(teams_router)
     app.include_router(simulations_router)
     app.include_router(evaluations_router)
     app.include_router(scenarios_router)

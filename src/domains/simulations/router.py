@@ -58,6 +58,7 @@ from src.domains.simulations.voice import (
     start_voice,
     valid_voice_token,
 )
+from src.domains.teams.service import can_see
 from src.domains.usage.meter import usage_scope
 from src.infrastructure.llm.factory import get_llm_provider
 from src.infrastructure.voice.vapi import VapiClient, VapiError
@@ -136,9 +137,15 @@ async def _check_level_unlocked(
     scenario = await scenario_repo.get(db=db, id=scenario_id, tenant_id=tenant_id)
     if scenario is None or scenario.is_archived:
         return  # start_session reports the 404
+    if not await can_see(db, scenario.id, ctx.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scenario not found"
+        )
     scenarios = ScenarioService(scenario_repo)
     progress = await scenarios.user_progress(db, tenant_id, ctx.user_id)
-    locked = await scenarios.locked_levels(db, tenant_id, progress)
+    locked = await scenarios.locked_levels(
+        db, tenant_id, progress, for_user=ctx.user_id
+    )
     if scenario.difficulty in locked:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

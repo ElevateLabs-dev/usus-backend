@@ -56,11 +56,22 @@ class TraineeCreate(BaseModel):
     }
 
 
+class TraineeInvite(TraineeCreate):
+    team_ids: list[UUID] = Field(
+        default=[], max_length=50, description="Teams to add them to (GET /teams)"
+    )
+
+
 class BulkTraineeCreate(BaseModel):
     trainees: list[TraineeCreate] = Field(
         min_length=1,
         max_length=MAX_BULK_TRAINEES,
         description=f"Between 1 and {MAX_BULK_TRAINEES} trainees",
+    )
+    team_ids: list[UUID] = Field(
+        default=[],
+        max_length=50,
+        description="Teams to add every trainee to (GET /teams)",
     )
 
     model_config = {
@@ -145,6 +156,9 @@ class UserInvite(BaseModel):
         default=OrgRole.TRAINEE,
         description="Managers may only invite trainees; company admins may invite "
         "any of the three roles",
+    )
+    team_ids: list[UUID] = Field(
+        default=[], max_length=50, description="Teams to add them to (GET /teams)"
     )
 
     model_config = {
