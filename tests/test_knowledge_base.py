@@ -4,6 +4,8 @@
 import io
 import zipfile
 
+import httpx
+import openai
 import pytest
 from sqlalchemy import func, select
 
@@ -14,6 +16,7 @@ from src.domains.knowledge.extract import chunk_text
 from src.domains.knowledge.models import DocumentChunk
 from src.domains.users.models import User
 from src.infrastructure.llm.embeddings import EMBEDDING_DIMENSIONS
+from src.infrastructure.storage.r2 import StorageError
 from tests.test_training_flow import (  # noqa: F401  (fixtures)
     PASSWORD,
     _auth,
@@ -222,3 +225,66 @@ def test_chunks_overlap_and_keep_paragraphs():
     assert len(chunks) > 1
     assert all(len(c) <= 600 for c in chunks)
     assert chunks[0].startswith("Paragraph 0")
+
+
+class FakeStorage:
+    configured = True
+
+    def __init__(self):
+        self.files = {}
+
+    async def put(self, key, body, content_type):
+        self.files[key] = body
+
+    async def get(self, key):
+        if key not in self.files:
+            raise StorageError("missing")
+        return self.files[key]
+
+    async def delete(self, key):
+        self.files.pop(key, None)
+
+
+class DownEmbedder:
+    async def embed(self, texts):
+        raise openai.APIConnectionError(request=httpx.Request("POST", "https://x"))
+
+
+async def test_failed_document_can_be_retried(client, session_factory, monkeypatch):
+    storage = FakeStorage()
+    monkeypatch.setattr(knowledge_router, "_storage", storage)
+    working = knowledge_service.embedder
+    monkeypatch.setattr(knowledge_service, "embedder", DownEmbedder())
+    await _make_org(session_factory)
+    manager = await _auth(client, "manager@acme.com")
+
+    uploaded = await _upload(
+        client, manager, "p.docx", make_docx("Refunds in 30 days.")
+    )
+    url = f"/api/v1/knowledge-base/documents/{uploaded.json()['id']}"
+    failed = (await client.get(url, headers=manager)).json()
+    assert failed["status"] == "failed"
+    assert "AI service" in failed["error"]
+    assert len(storage.files) == 1
+
+    monkeypatch.setattr(knowledge_service, "embedder", working)
+    retried = await client.post(f"{url}/retry", headers=manager)
+    assert retried.status_code == 200, retried.text
+    assert (await client.get(url, headers=manager)).json()["status"] == "ready"
+
+    # Only failed documents
+    assert (await client.post(f"{url}/retry", headers=manager)).status_code == 409
+
+    await client.delete(url, headers=manager)
+    assert storage.files == {}
+
+
+async def test_retry_needs_the_kept_file(client, session_factory, monkeypatch):
+    monkeypatch.setattr(knowledge_service, "embedder", DownEmbedder())
+    await _make_org(session_factory)
+    manager = await _auth(client, "manager@acme.com")
+    uploaded = await _upload(client, manager, "p.docx", make_docx("Hi."))
+    url = f"/api/v1/knowledge-base/documents/{uploaded.json()['id']}/retry"
+    response = await client.post(url, headers=manager)
+    assert response.status_code == 409
+    assert "upload it again" in response.json()["detail"]

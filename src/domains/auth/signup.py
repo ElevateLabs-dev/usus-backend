@@ -2,7 +2,7 @@
 Self-serve company signup.
 
 1. POST /auth/signup with the company and your details; a 6-digit code is
-   emailed to you. Only company emails are accepted.
+   emailed to you.
 2. POST /auth/verify-email with the code. This creates the organization (with
    the starter scenarios) and you as its company admin, and signs you in.
 
@@ -87,7 +87,7 @@ def is_personal_email(email: str) -> bool:
 
 class SignupRequest(BaseModel):
     company_name: str = Field(min_length=2, max_length=255)
-    email: EmailStr = Field(description="Your company email (no Gmail, Yahoo etc.)")
+    email: EmailStr = Field(description="Your email")
     full_name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)
     company_type: str | None = Field(
@@ -231,12 +231,10 @@ def _too_soon(seconds: int) -> HTTPException:
     description=(
         "Starts a company signup and emails a 6-digit code to `email`. Nothing "
         "is created until the code is confirmed with `POST /auth/verify-email`.\n\n"
-        "Only company emails are accepted (no Gmail, Yahoo, Outlook etc.). "
         "Signing up again with the same email replaces the earlier details and "
         "sends a new code."
     ),
     responses={
-        400: {"description": "Not a company email"},
         409: {"description": "Email or company name already registered"},
         429: {"description": "A code was sent less than a minute ago"},
     },
@@ -245,11 +243,12 @@ async def signup(
     body: SignupRequest, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> CodeSent:
     email = body.email.strip().lower()
-    if is_personal_email(email):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please use your company email address",
-        )
+    # Company emails only: turned off for now, any valid email can sign up
+    # if is_personal_email(email):
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Please use your company email address",
+    #     )
     if await _email_taken(db, email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"

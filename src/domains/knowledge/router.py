@@ -1,8 +1,12 @@
 """
 Knowledge base API: upload PDF / Word documents and choose whether the
 evaluator uses them.
+
+The original file is kept in R2 (when it is set up) so a failed document can
+be retried without uploading it again.
 """
 
+import logging
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -25,13 +29,17 @@ from src.core.database import AsyncSessionLocal, get_db
 from src.core.dependencies import AuthContext, UserRole, require_roles
 from src.domains.knowledge import service
 from src.domains.knowledge.extract import file_type
-from src.domains.knowledge.models import Document, DocumentChunk
+from src.domains.knowledge.models import Document, DocumentChunk, DocumentStatus
 from src.domains.tenants.models import Tenant
+from src.infrastructure.storage.r2 import R2Storage, StorageError
+
+logger = logging.getLogger("usus.knowledge")
 
 router = APIRouter(prefix="/api/v1/knowledge-base", tags=["Knowledge base"])
 
 # Session factory for the background processing (swapped out in tests)
 _session_factory = AsyncSessionLocal
+_storage = R2Storage()
 
 MAX_FILE_BYTES = 20_000_000
 MAX_DOCUMENTS = 100
@@ -83,6 +91,10 @@ def _tenant_of(ctx: AuthContext) -> UUID:
             detail="Tenant context required",
         )
     return ctx.tenant_id
+
+
+def _file_key(document: Document) -> str:
+    return f"knowledge/{document.tenant_id}/{document.id}.{document.file_type}"
 
 
 async def _document(db: AsyncSession, ctx: AuthContext, document_id: UUID) -> Document:
@@ -160,6 +172,12 @@ async def upload_document(
     db.add(document)
     await db.commit()
     await db.refresh(document)
+    if _storage.configured:
+        try:
+            await _storage.put(_file_key(document), data, "application/octet-stream")
+        except StorageError:
+            # Still processed; only retrying will need a new upload
+            logger.exception("Keeping the original of document %s failed", document.id)
     background_tasks.add_task(
         service.process_document, document.id, data, _session_factory
     )
@@ -194,7 +212,58 @@ async def delete_document(
     )
     await db.delete(document)
     await db.commit()
+    if _storage.configured:
+        try:
+            await _storage.delete(_file_key(document))
+        except StorageError:
+            logger.exception("Deleting the original of document %s failed", document_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/documents/{document_id}/retry",
+    response_model=DocumentRead,
+    summary="Retry a failed document",
+    description=(
+        "**Company admin / manager only.** Processes a `failed` document again "
+        "from the file uploaded earlier. `status` goes back to `processing`; "
+        "poll `GET /knowledge-base/documents/{id}` as after an upload."
+    ),
+    responses={
+        **_ERRORS,
+        404: {"description": "Document not found"},
+        409: {
+            "description": "The document has not failed, or its file is no "
+            "longer available (delete it and upload it again)"
+        },
+    },
+)
+async def retry_document(
+    document_id: UUID,
+    ctx: _Staff,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
+    document = await _document(db, ctx, document_id)
+    if document.status != DocumentStatus.FAILED.value:
+        raise HTTPException(
+            status_code=409, detail="Only failed documents can be retried"
+        )
+    try:
+        data = await _storage.get(_file_key(document))
+    except StorageError:
+        raise HTTPException(
+            status_code=409,
+            detail="The file is no longer available. Delete it and upload it again.",
+        )
+    document.status = DocumentStatus.PROCESSING.value
+    document.error = None
+    await db.commit()
+    await db.refresh(document)
+    background_tasks.add_task(
+        service.process_document, document.id, data, _session_factory
+    )
+    return document
 
 
 async def _settings(db: AsyncSession, tenant_id: UUID) -> KnowledgeSettings:

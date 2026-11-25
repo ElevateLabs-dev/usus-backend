@@ -126,6 +126,7 @@ async def test_signup_then_verify_creates_company_admin(
     assert signin.status_code == 200
 
 
+@pytest.mark.skip(reason="Company-email check is off for now")
 @pytest.mark.parametrize(
     "email", ["ada@gmail.com", "ada@yahoo.co.uk", "ada@Outlook.com", "ada@icloud.com"]
 )
