@@ -1,5 +1,5 @@
 # ruff: noqa: F811  (pytest fixtures shared with other tests)
-"""Company setup checklist, company profile/logo and the walkthrough."""
+"""Company setup checklist and company profile/logo."""
 
 from src.domains.tenants import router as tenants_router
 from tests.test_knowledge_base import _admin, _upload, kb, make_docx  # noqa: F401
@@ -49,9 +49,8 @@ async def test_checklist_follows_the_organizations_data(
         "scenarios": False,
         "company_profile": False,
         "team": True,
-        "launch": False,
     }
-    assert (checklist["completed"], checklist["total"]) == (1, 5)
+    assert (checklist["completed"], checklist["total"]) == (1, 4)
     assert (
         await client.get("/api/v1/onboarding/checklist", headers=trainee)
     ).status_code == 403
@@ -86,32 +85,10 @@ async def test_checklist_follows_the_organizations_data(
     [key] = storage.files
     assert key.startswith(f"logos/{tenant_id}/")
 
-    launched = await client.post("/api/v1/onboarding/launch", headers=admin)
-    assert all(_done(launched.json()).values())
-    assert launched.json()["completed"] == 5
-
-    hidden = await client.patch(
-        "/api/v1/onboarding/checklist", json={"dismissed": True}, headers=admin
-    )
-    assert hidden.json()["dismissed"] is True
-    assert (
-        await client.patch(
-            "/api/v1/onboarding/checklist", json={"dismissed": False}, headers=manager
-        )
-    ).status_code == 403
+    checklist = (await client.get("/api/v1/onboarding/checklist", headers=admin)).json()
+    assert all(_done(checklist).values())
+    assert checklist["completed"] == 4
 
     removed = await client.delete("/api/v1/organizations/me/logo", headers=admin)
     assert removed.json()["logo_url"] is None
     assert storage.files == {}
-
-
-async def test_walkthrough_is_remembered(client, session_factory):
-    await _make_org(session_factory)
-    trainee = await _auth(client, "trainee@acme.com")
-    me = (await client.get("/api/v1/users/me", headers=trainee)).json()
-    assert me["walkthrough_done_at"] is None
-
-    done = await client.post("/api/v1/onboarding/walkthrough", headers=trainee)
-    assert done.status_code == 200
-    me = (await client.get("/api/v1/users/me", headers=trainee)).json()
-    assert me["walkthrough_done_at"] is not None

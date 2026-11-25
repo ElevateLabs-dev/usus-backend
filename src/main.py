@@ -46,7 +46,7 @@ OPENAPI_TAGS = [
     {"name": "Auth", "description": "Company signup, sign in and change password."},
     {
         "name": "Getting started",
-        "description": "Company setup checklist and the first-time walkthrough.",
+        "description": "Company setup checklist.",
     },
     {
         "name": "Organizations",
