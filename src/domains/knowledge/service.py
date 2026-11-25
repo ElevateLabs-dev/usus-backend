@@ -11,6 +11,7 @@ import logging
 import math
 import uuid
 
+import openai
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -48,9 +49,17 @@ async def process_document(
         except EmbeddingsUnavailable:
             await _fail(db, document, "Document processing is not available yet")
             return
+        except (openai.APIStatusError, openai.APIConnectionError):
+            logger.exception("Embedding document %s failed", document_id)
+            await _fail(
+                db,
+                document,
+                "The AI service is not available right now. Retry in a few minutes.",
+            )
+            return
         except Exception:
             logger.exception("Processing document %s failed", document_id)
-            await _fail(db, document, "Processing failed. Please upload it again.")
+            await _fail(db, document, "Processing failed. Please retry.")
             return
 
         # Deleted while it was being processed

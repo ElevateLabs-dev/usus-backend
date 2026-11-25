@@ -17,7 +17,7 @@ class Tenant(Base):
 
     __tablename__ = "tenants"
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Answers from the signup form
     company_type: Mapped[str | None] = mapped_column(String(100), nullable=True)

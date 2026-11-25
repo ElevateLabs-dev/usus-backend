@@ -1,5 +1,6 @@
 """
-Cloudflare R2 file storage (S3-compatible), used for profile pictures.
+Cloudflare R2 file storage (S3-compatible), used for profile pictures, company
+logos and the original knowledge base files.
 
 Files are uploaded by the backend and served from the bucket's public URL
 (R2_PUBLIC_URL: a custom domain connected to the bucket, or its r2.dev URL
@@ -54,6 +55,17 @@ class R2Storage:
             raise
         except Exception as exc:
             raise StorageError("Upload failed") from exc
+
+    async def get(self, key: str) -> bytes:
+        try:
+            async with self._client() as s3:
+                response = await s3.get_object(Bucket=settings.R2_BUCKET, Key=key)
+                async with response["Body"] as body:
+                    return await body.read()
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise StorageError("Download failed") from exc
 
     async def delete(self, key: str) -> None:
         try:
