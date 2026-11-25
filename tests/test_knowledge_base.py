@@ -271,11 +271,19 @@ async def test_failed_document_can_be_retried(client, session_factory, monkeypat
     retried = await client.post(f"{url}/retry", headers=manager)
     assert retried.status_code == 200, retried.text
     assert (await client.get(url, headers=manager)).json()["status"] == "ready"
+    # Indexed, so the kept file is gone
+    assert storage.files == {}
 
     # Only failed documents
     assert (await client.post(f"{url}/retry", headers=manager)).status_code == 409
 
-    await client.delete(url, headers=manager)
+    # A failed document's file is removed when it is deleted
+    monkeypatch.setattr(knowledge_service, "embedder", DownEmbedder())
+    other = await _upload(client, manager, "q.docx", make_docx("Hello."))
+    assert len(storage.files) == 1
+    await client.delete(
+        f"/api/v1/knowledge-base/documents/{other.json()['id']}", headers=manager
+    )
     assert storage.files == {}
 
 

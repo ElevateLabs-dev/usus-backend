@@ -2,8 +2,8 @@
 Knowledge base API: upload PDF / Word documents and choose whether the
 evaluator uses them.
 
-The original file is kept in R2 (when it is set up) so a failed document can
-be retried without uploading it again.
+The original file is kept in R2 (when it is set up) only until it is indexed,
+so a failed document can be retried without uploading it again.
 """
 
 import logging
@@ -97,6 +97,23 @@ def _file_key(document: Document) -> str:
     return f"knowledge/{document.tenant_id}/{document.id}.{document.file_type}"
 
 
+async def _process(document: Document, data: bytes) -> None:
+    """Index the file, then drop the kept copy unless it is needed to retry."""
+    key = _file_key(document)
+    await service.process_document(document.id, data, _session_factory)
+    async with _session_factory() as db:
+        processed = await db.get(Document, document.id)
+        failed = (
+            processed is not None and processed.status == DocumentStatus.FAILED.value
+        )
+    if failed or not _storage.configured:
+        return
+    try:
+        await _storage.delete(key)
+    except StorageError:
+        logger.exception("Deleting the original of document %s failed", document.id)
+
+
 async def _document(db: AsyncSession, ctx: AuthContext, document_id: UUID) -> Document:
     document = await db.get(Document, document_id)
     if document is None or document.tenant_id != _tenant_of(ctx):
@@ -178,9 +195,7 @@ async def upload_document(
         except StorageError:
             # Still processed; only retrying will need a new upload
             logger.exception("Keeping the original of document %s failed", document.id)
-    background_tasks.add_task(
-        service.process_document, document.id, data, _session_factory
-    )
+    background_tasks.add_task(_process, document, data)
     return document
 
 
@@ -260,9 +275,7 @@ async def retry_document(
     document.error = None
     await db.commit()
     await db.refresh(document)
-    background_tasks.add_task(
-        service.process_document, document.id, data, _session_factory
-    )
+    background_tasks.add_task(_process, document, data)
     return document
 
 
