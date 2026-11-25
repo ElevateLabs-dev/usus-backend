@@ -154,13 +154,6 @@ async def _email_taken(db: AsyncSession, email: str) -> bool:
     return found.first() is not None
 
 
-async def _company_taken(db: AsyncSession, name: str) -> bool:
-    found = await db.execute(
-        select(Tenant.id).where(func.lower(Tenant.name) == name.lower())
-    )
-    return found.first() is not None
-
-
 async def _pending(db: AsyncSession, email: str) -> PendingSignup | None:
     result = await db.execute(
         select(PendingSignup).where(PendingSignup.email == email.lower())
@@ -235,7 +228,7 @@ def _too_soon(seconds: int) -> HTTPException:
         "sends a new code."
     ),
     responses={
-        409: {"description": "Email or company name already registered"},
+        409: {"description": "Email already registered"},
         429: {"description": "A code was sent less than a minute ago"},
     },
 )
@@ -252,11 +245,6 @@ async def signup(
     if await _email_taken(db, email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-    if await _company_taken(db, body.company_name):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A company with this name is already on Usus",
         )
 
     now = _now()
@@ -328,7 +316,7 @@ async def resend_code(
     responses={
         400: {"description": "Wrong or expired code"},
         404: {"description": "No signup waiting for this email"},
-        409: {"description": "Email or company name was registered meanwhile"},
+        409: {"description": "Email was registered meanwhile"},
     },
 )
 async def verify_email(
@@ -359,13 +347,6 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    if await _company_taken(db, pending.company_name):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A company with this name is already on Usus. "
-            "Please sign up again with another name.",
-        )
-
     tenant = Tenant(
         name=pending.company_name,
         company_type=pending.company_type,

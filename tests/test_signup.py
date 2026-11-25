@@ -199,7 +199,9 @@ async def test_expired_code(client, outbox, session_factory):
     assert "expired" in response.json()["detail"]
 
 
-async def test_taken_email_or_company_name(client, outbox, session_factory):
+async def test_taken_email_is_refused_but_names_can_repeat(
+    client, outbox, session_factory
+):
     async with session_factory() as db:
         tenant = Tenant(name="Acme Retail")
         db.add(tenant)
@@ -214,15 +216,24 @@ async def test_taken_email_or_company_name(client, outbox, session_factory):
         )
         await db.commit()
 
-    taken_name = await client.post("/api/v1/auth/signup", json=DETAILS)
-    assert taken_name.status_code == 409
-
     taken_email = await client.post(
         "/api/v1/auth/signup",
         json={**DETAILS, "company_name": "Other Co", "email": "boss@other.com"},
     )
     assert taken_email.status_code == 409
     assert outbox == []
+
+    # Another company with the same name is fine
+    same_name = await client.post("/api/v1/auth/signup", json=DETAILS)
+    assert same_name.status_code == 201
+    verified = await client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": DETAILS["email"], "code": _code(outbox)},
+    )
+    assert verified.status_code == 200, verified.text
+    async with session_factory() as db:
+        names = (await db.execute(select(Tenant.name))).scalars().all()
+    assert names == ["Acme Retail", "Acme Retail"]
 
 
 async def test_signing_up_again_updates_the_details(client, outbox, session_factory):
